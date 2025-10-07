@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Quick URL Shortener",
+  "version": "1.0",
+  "description": "Shortens the current tab URL and copies it to clipboard.",
+  "permissions": ["tabs", "clipboardWrite"],
+  "action": {
+    "default_icon": {
+      "16": "assets/Shapes/W.svg",
+      "32": "assets/Shapes/W.svg",
+      "48": "assets/Shapes/W.svg",
+      "128": "assets/Shapes/W.svg",
+        "16": "assets/Shapes/S.svg",
+      "32": "assets/Shapes/S.svg",
+      "48": "assets/Shapes/S.svg",
+      "128": "assets/Shapes/S.svg"
+    },
+    "default_popup": "popup.html"
+  },
+  "icons": {
+   "16": "assets/Shapes/W.svg",
+      "32": "assets/Shapes/W.svg",
+      "48": "assets/Shapes/W.svg",
+      "128": "assets/Shapes/W.svg",
+        "16": "assets/Shapes/S.svg",
+      "32": "assets/Shapes/S.svg",
+      "48": "assets/Shapes/S.svg",
+      "128": "assets/Shapes/S.svg"
+  }
+}

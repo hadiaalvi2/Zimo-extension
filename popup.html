@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quick URL Shortener</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        width: 503px;
+        height: 488px;
+        font-family: "Inter", Arial, sans-serif;
+        color: white;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        position: relative;
+
+        /* Accurate XD background */
+        background: rgba(0, 0, 0, 0.69);
+        border: 1px solid rgba(120, 120, 120, 0.45);
+        backdrop-filter: blur(13px) brightness(1.14);
+        border-radius: 12px;
+        box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.05);
+        overflow: hidden;
+      }
+
+      .top-bar {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 18px;
+        box-sizing: border-box;
+      }
+
+      .top-bar-left img {
+        height: 30px;
+        width: auto;
+        opacity: 0.95;
+      }
+
+      .top-bar-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .top-bar-right img {
+        height: 26px;
+        width: 26px;
+        opacity: 0.9;
+        cursor: pointer;
+        transition: opacity 0.2s ease;
+      }
+
+      .top-bar-right img:hover {
+        opacity: 1;
+      }
+
+      .bottom-icon {
+        position: absolute;
+        bottom: 14px;
+        right: 18px;
+        width: 80px;
+        height: auto;
+        opacity: 0.9;
+      }
+
+      html {
+        background: transparent;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="top-bar">
+      <div class="top-bar-left">
+        <img src="assets/Extension+/ZIMO WS Duo Chrome B.svg" alt="ZIMO WS" />
+      </div>
+      <div class="top-bar-right">
+        <img src="assets/History W.svg" alt="History Icon" title="History" />
+        <img src="assets/Extension+/Chrome Extension Icon.svg" alt="Chrome Extension Icon" />
+      </div>
+    </div>
+
+    <img
+      class="bottom-icon"
+      src="assets/Extension+/Extension Chrome WS W.svg"
+      alt="Extension Chrome WS B"
+    />
+  </body>
+</html>
