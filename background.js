@@ -11,10 +11,19 @@ chrome.commands.onCommand.addListener((command) => {
 
 // Listen for extension icon clicks
 chrome.action.onClicked.addListener(async (tab) => {
+  console.log('Extension icon clicked for URL:', tab.url);
   const urlToShorten = tab.url;
   
+  // First, open the popup immediately
+  chrome.windows.create({
+    url: 'popup.html',
+    type: 'popup',
+    width: 520,
+    height: 505
+  });
+  
   try {
-    // Shorten URL using TinyURL API
+    // Then shorten URL using TinyURL API
     const response = await fetch(
       `https://tinyurl.com/api-create.php?url=${encodeURIComponent(urlToShorten)}`
     );
@@ -24,17 +33,24 @@ chrome.action.onClicked.addListener(async (tab) => {
     }
     
     const shortUrl = await response.text();
+    console.log('Shortened URL:', shortUrl);
     
-    
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: (text) => {
-        navigator.clipboard.writeText(text).then(() => {
-          console.log('URL copied to clipboard:', text);
-        });
-      },
-      args: [shortUrl]
-    });
+    // Copy to clipboard using offscreen document approach
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: (text) => {
+          navigator.clipboard.writeText(text).then(() => {
+            console.log('URL copied to clipboard:', text);
+          }).catch(err => {
+            console.error('Clipboard error:', err);
+          });
+        },
+        args: [shortUrl]
+      });
+    } catch (clipboardError) {
+      console.log('Clipboard copy failed, but URL was shortened:', clipboardError);
+    }
     
     // Show success notification
     chrome.notifications.create({
@@ -75,12 +91,15 @@ function saveToHistory(longUrl, shortUrl) {
     if (history.length > 50) {
       history.pop();
     }
-    chrome.storage.local.set({ urlHistory: history });
+    chrome.storage.local.set({ urlHistory: history }, () => {
+      console.log('History saved');
+    });
   });
 }
 
-// Optional: Add context menu item for right-click shortening
 chrome.runtime.onInstalled.addListener(() => {
+  console.log('Extension installed/updated');
+  
   chrome.contextMenus.create({
     id: 'shortenUrl',
     title: 'Shorten this URL',
@@ -159,4 +178,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       height: 505
     });
   }
+});
+
+// Keep service worker alive
+chrome.runtime.onStartup.addListener(() => {
+  console.log('Extension started');
 });

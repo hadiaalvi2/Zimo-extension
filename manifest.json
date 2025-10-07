@@ -1,17 +1,27 @@
 {
   "manifest_version": 3,
   "name": "Quick URL Shortener",
-  "version": "1.0",
+  "version": "1.0.1",
   "description": "Shortens the current tab URL and copies it to clipboard.",
-  "permissions": ["tabs", "activeTab", "scripting", "notifications", "storage"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "tabs",
+    "activeTab",
+    "scripting",
+    "notifications",
+    "storage",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "action": {
     "default_icon": {
       "16": "assets/Shapes/W.svg",
       "32": "assets/Shapes/W.svg",
       "48": "assets/Shapes/W.svg",
       "128": "assets/Shapes/W.svg"
-    }
+    },
+    "default_title": "Click to shorten current URL"
   },
   "icons": {
     "16": "assets/Shapes/W.svg",
@@ -20,7 +30,8 @@
     "128": "assets/Shapes/W.svg"
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "commands": {
     "open-popup": {
