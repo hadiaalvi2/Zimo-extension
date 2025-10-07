@@ -3,28 +3,31 @@
   "name": "Quick URL Shortener",
   "version": "1.0",
   "description": "Shortens the current tab URL and copies it to clipboard.",
-  "permissions": ["tabs", "clipboardWrite"],
+  "permissions": ["tabs", "activeTab", "scripting", "notifications", "storage"],
+  "host_permissions": ["<all_urls>"],
   "action": {
     "default_icon": {
       "16": "assets/Shapes/W.svg",
       "32": "assets/Shapes/W.svg",
       "48": "assets/Shapes/W.svg",
-      "128": "assets/Shapes/W.svg",
-        "16": "assets/Shapes/S.svg",
-      "32": "assets/Shapes/S.svg",
-      "48": "assets/Shapes/S.svg",
-      "128": "assets/Shapes/S.svg"
-    },
-    "default_popup": "popup.html"
+      "128": "assets/Shapes/W.svg"
+    }
   },
   "icons": {
-   "16": "assets/Shapes/W.svg",
-      "32": "assets/Shapes/W.svg",
-      "48": "assets/Shapes/W.svg",
-      "128": "assets/Shapes/W.svg",
-        "16": "assets/Shapes/S.svg",
-      "32": "assets/Shapes/S.svg",
-      "48": "assets/Shapes/S.svg",
-      "128": "assets/Shapes/S.svg"
+    "16": "assets/Shapes/W.svg",
+    "32": "assets/Shapes/W.svg",
+    "48": "assets/Shapes/W.svg",
+    "128": "assets/Shapes/W.svg"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "open-popup": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+H"
+      },
+      "description": "Open history popup"
+    }
   }
 }

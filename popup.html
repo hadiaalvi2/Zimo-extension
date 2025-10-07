@@ -18,7 +18,6 @@
         justify-content: flex-start;
         position: relative;
 
-        /* Accurate XD background */
         background: rgba(0, 0, 0, 0.69);
         border: 1px solid rgba(120, 120, 120, 0.45);
         backdrop-filter: blur(13px) brightness(1.14);
@@ -60,6 +59,89 @@
         opacity: 1;
       }
 
+      .content-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 20px;
+        width: 100%;
+        box-sizing: border-box;
+        overflow-y: auto;
+      }
+
+      .history-section {
+        width: 100%;
+        max-width: 450px;
+      }
+
+      .history-title {
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 15px;
+        text-align: center;
+      }
+
+      .history-item {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 12px 15px;
+        margin-bottom: 10px;
+        transition: background 0.2s;
+      }
+
+      .history-item:hover {
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .history-item-short {
+        font-size: 14px;
+        color: #4a9eff;
+        margin-bottom: 5px;
+        word-break: break-all;
+        cursor: pointer;
+      }
+
+      .history-item-short:hover {
+        text-decoration: underline;
+      }
+
+      .history-item-long {
+        font-size: 11px;
+        color: #999;
+        word-break: break-all;
+      }
+
+      .history-item-date {
+        font-size: 10px;
+        color: #666;
+        margin-top: 5px;
+      }
+
+      .no-history {
+        text-align: center;
+        color: #999;
+        font-size: 14px;
+        margin-top: 50px;
+      }
+
+      .clear-history-btn {
+        background: rgba(255, 59, 48, 0.2);
+        border: 1px solid rgba(255, 59, 48, 0.4);
+        color: #ff3b30;
+        padding: 8px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+        margin-top: 15px;
+        transition: all 0.2s;
+      }
+
+      .clear-history-btn:hover {
+        background: rgba(255, 59, 48, 0.3);
+      }
+
       .bottom-icon {
         position: absolute;
         bottom: 14px;
@@ -80,8 +162,18 @@
         <img src="assets/Extension+/ZIMO WS Duo Chrome B.svg" alt="ZIMO WS" />
       </div>
       <div class="top-bar-right">
-        <img src="assets/History W.svg" alt="History Icon" title="History" />
+        <img src="assets/History W.svg" alt="History Icon" title="History" id="historyBtn" />
         <img src="assets/Extension+/Chrome Extension Icon.svg" alt="Chrome Extension Icon" />
+      </div>
+    </div>
+
+    <div class="content-area">
+      <div class="history-section">
+        <div class="history-title">Recent URLs</div>
+        <div id="historyList"></div>
+        <center>
+          <button class="clear-history-btn" id="clearHistory">Clear History</button>
+        </center>
       </div>
     </div>
 
@@ -90,5 +182,7 @@
       src="assets/Extension+/Extension Chrome WS W.svg"
       alt="Extension Chrome WS B"
     />
+
+    <script src="popup.js"></script>
   </body>
 </html>
