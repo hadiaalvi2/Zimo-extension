@@ -41,6 +41,7 @@
         align-items: center;
         padding: 16px 20px;
         border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        position: relative;
       }
 
       .top-bar-left img {
@@ -66,6 +67,15 @@
       .top-bar-right img:hover {
         opacity: 1;
         transform: scale(1.05);
+      }
+
+      .colorful-line {
+        position: absolute;
+        right: 0;
+        top: 0;
+        height: 100%;
+        width: 4px;
+        object-fit: cover;
       }
 
       .content-area {
@@ -205,6 +215,7 @@
         <img src="assets/History W.svg" alt="History Icon" title="History" id="historyBtn" />
         <img src="assets/Extension+/Chrome Extension Icon.svg" alt="Chrome Extension Icon" />
       </div>
+      <img class="colorful-line" src="assets/Extension+/WS Chrome Line.svg" alt="Colorful Line" />
     </div>
 
     <div class="content-area">
