@@ -3,79 +3,111 @@ chrome.commands.onCommand.addListener((command) => {
     chrome.windows.create({
       url: 'popup.html',
       type: 'popup',
-      width: 520,
-      height: 505
+      width: 540,
+      height: 560,
+      left: 100,
+      top: 100
     });
   }
 });
 
-// Listen for extension icon clicks
+// Listen for extension icon clicks - shorten current URL automatically
 chrome.action.onClicked.addListener(async (tab) => {
   console.log('Extension icon clicked for URL:', tab.url);
   const urlToShorten = tab.url;
   
   // First, open the popup immediately
-  chrome.windows.create({
+  const popupWindow = await chrome.windows.create({
     url: 'popup.html',
     type: 'popup',
-    width: 520,
-    height: 505
+    width: 540,
+    height: 560,
+    left: 100,
+    top: 100
   });
   
-  try {
-    // Then shorten URL using TinyURL API
-    const response = await fetch(
-      `https://tinyurl.com/api-create.php?url=${encodeURIComponent(urlToShorten)}`
-    );
-    
-    if (!response.ok) {
-      throw new Error('Failed to shorten URL');
-    }
-    
-    const shortUrl = await response.text();
-    console.log('Shortened URL:', shortUrl);
-    
-    // Copy to clipboard using offscreen document approach
+  // Wait a bit for popup to load, then shorten URL
+  setTimeout(async () => {
     try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: (text) => {
-          navigator.clipboard.writeText(text).then(() => {
-            console.log('URL copied to clipboard:', text);
-          }).catch(err => {
-            console.error('Clipboard error:', err);
-          });
-        },
-        args: [shortUrl]
+      // Shorten URL using TinyURL API with better error handling
+      const response = await fetch(
+        `https://tinyurl.com/api-create.php?url=${encodeURIComponent(urlToShorten)}`,
+        {
+          method: 'GET',
+          headers: {
+            'Accept': 'text/plain'
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const shortUrl = await response.text();
+      
+      // Validate the response
+      if (!shortUrl || shortUrl.includes('Error') || !shortUrl.startsWith('http')) {
+        throw new Error('Invalid response from URL shortening service');
+      }
+      
+      console.log('Shortened URL:', shortUrl);
+      
+      // Copy to clipboard using the active tab
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: (text) => {
+            navigator.clipboard.writeText(text).then(() => {
+              console.log('URL copied to clipboard:', text);
+            }).catch(err => {
+              console.error('Clipboard error:', err);
+            });
+          },
+          args: [shortUrl]
+        });
+      } catch (clipboardError) {
+        console.log('Clipboard copy failed, but URL was shortened:', clipboardError);
+      }
+      
+      // Show success notification
+      chrome.notifications.create({
+        type: 'basic',
+        iconUrl: 'assets/Shapes/W.svg',
+        title: 'URL Shortened ✓',
+        message: `Copied: ${shortUrl}`,
+        priority: 2
       });
-    } catch (clipboardError) {
-      console.log('Clipboard copy failed, but URL was shortened:', clipboardError);
+      
+      // Save to history
+      saveToHistory(urlToShorten, shortUrl);
+      
+      // Send message to popup to update UI
+      chrome.runtime.sendMessage({
+        action: 'urlShortened',
+        longUrl: urlToShorten,
+        shortUrl: shortUrl
+      });
+      
+    } catch (error) {
+      console.error('Error shortening URL:', error);
+      
+      // Show error notification
+      chrome.notifications.create({
+        type: 'basic',
+        iconUrl: 'assets/Shapes/W.svg',
+        title: 'Failed to shorten URL ✗',
+        message: error.message || 'Please try again',
+        priority: 2
+      });
+      
+      // Send error to popup
+      chrome.runtime.sendMessage({
+        action: 'urlShortenFailed',
+        error: error.message || 'Failed to shorten URL'
+      });
     }
-    
-    // Show success notification
-    chrome.notifications.create({
-      type: 'basic',
-      iconUrl: 'assets/Shapes/W.svg',
-      title: 'URL Shortened ✓',
-      message: `Copied: ${shortUrl}`,
-      priority: 2
-    });
-    
-    // Save to history
-    saveToHistory(urlToShorten, shortUrl);
-    
-  } catch (error) {
-    console.error('Error shortening URL:', error);
-    
-    // Show error notification
-    chrome.notifications.create({
-      type: 'basic',
-      iconUrl: 'assets/Shapes/W.svg',
-      title: 'Failed to shorten URL ✗',
-      message: error.message || 'Please try again',
-      priority: 2
-    });
-  }
+  }, 500);
 });
 
 // Save URL history
@@ -119,8 +151,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     chrome.windows.create({
       url: 'popup.html',
       type: 'popup',
-      width: 520,
-      height: 505
+      width: 540,
+      height: 560,
+      left: 100,
+      top: 100
     });
     return;
   }
@@ -130,9 +164,24 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     
     try {
       const response = await fetch(
-        `https://tinyurl.com/api-create.php?url=${encodeURIComponent(urlToShorten)}`
+        `https://tinyurl.com/api-create.php?url=${encodeURIComponent(urlToShorten)}`,
+        {
+          method: 'GET',
+          headers: {
+            'Accept': 'text/plain'
+          }
+        }
       );
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const shortUrl = await response.text();
+      
+      if (!shortUrl || shortUrl.includes('Error') || !shortUrl.startsWith('http')) {
+        throw new Error('Invalid response from URL shortening service');
+      }
       
       // Copy to clipboard
       await chrome.scripting.executeScript({
@@ -168,15 +217,52 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 });
 
-// Listen for messages to open popup
+// Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'openPopup') {
     chrome.windows.create({
       url: 'popup.html',
       type: 'popup',
-      width: 520,
-      height: 505
+      width: 540,
+      height: 560,
+      left: 100,
+      top: 100
     });
+  }
+  
+  if (request.action === 'shortenUrl') {
+    const urlToShorten = request.url;
+    
+    fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(urlToShorten)}`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'text/plain'
+      }
+    })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.text();
+      })
+      .then(shortUrl => {
+        // Validate the response
+        if (!shortUrl || shortUrl.includes('Error') || !shortUrl.startsWith('http')) {
+          throw new Error('Invalid response from URL shortening service');
+        }
+        
+        // Save to history
+        saveToHistory(urlToShorten, shortUrl);
+        
+        // Send response back
+        sendResponse({ success: true, shortUrl: shortUrl });
+      })
+      .catch(error => {
+        console.error('Error shortening URL:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    
+    return true; // Keep message channel open for async response
   }
 });
 

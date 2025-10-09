@@ -12,8 +12,8 @@
       }
 
       html, body {
-        width: 503px;
-        height: 488px;
+        width: 520px;
+        height: 505px;
         overflow: hidden;
         background: transparent;
       }
@@ -26,12 +26,12 @@
         position: relative;
 
         /* Glassmorphism effect matching the image */
-        background: rgba(28, 28, 30, 0.85);
+        background: rgba(28, 28, 30, 0.88);
         backdrop-filter: blur(40px) saturate(180%);
         -webkit-backdrop-filter: blur(40px) saturate(180%);
         border: 1px solid rgba(255, 255, 255, 0.18);
-        border-radius: 0;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        border-radius: 12px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
       }
 
       .top-bar {
@@ -39,13 +39,20 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 16px 20px;
+        padding: 14px 20px;
         border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         position: relative;
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: 12px 12px 0 0;
+      }
+
+      .top-bar-left {
+        display: flex;
+        align-items: center;
       }
 
       .top-bar-left img {
-        height: 32px;
+        height: 28px;
         width: auto;
         opacity: 0.95;
       }
@@ -53,20 +60,20 @@
       .top-bar-right {
         display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 16px;
       }
 
       .top-bar-right img {
-        height: 28px;
-        width: 28px;
-        opacity: 0.85;
+        height: 24px;
+        width: 24px;
+        opacity: 0.75;
         cursor: pointer;
-        transition: opacity 0.2s ease, transform 0.2s ease;
+        transition: all 0.2s ease;
       }
 
       .top-bar-right img:hover {
         opacity: 1;
-        transform: scale(1.05);
+        transform: scale(1.1);
       }
 
       .colorful-line {
@@ -74,15 +81,16 @@
         right: 0;
         top: 0;
         height: 100%;
-        width: 4px;
+        width: 5px;
         object-fit: cover;
+        border-radius: 0 12px 0 0;
       }
 
       .content-area {
         flex: 1;
         display: flex;
         flex-direction: column;
-        padding: 20px;
+        padding: 20px 24px;
         overflow-y: auto;
       }
 
@@ -95,12 +103,106 @@
       }
 
       .content-area::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.15);
         border-radius: 3px;
       }
 
       .content-area::-webkit-scrollbar-thumb:hover {
-        background: rgba(255, 255, 255, 0.3);
+        background: rgba(255, 255, 255, 0.25);
+      }
+
+      .shorten-section {
+        width: 100%;
+        margin-bottom: 24px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .shorten-title {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 12px;
+        text-align: center;
+        letter-spacing: -0.3px;
+        opacity: 0.95;
+      }
+
+      .input-group {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .url-input {
+        flex: 1;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 6px;
+        padding: 10px 12px;
+        color: white;
+        font-size: 12px;
+        font-family: inherit;
+        outline: none;
+        transition: all 0.2s ease;
+      }
+
+      .url-input::placeholder {
+        color: rgba(255, 255, 255, 0.4);
+      }
+
+      .url-input:focus {
+        background: rgba(255, 255, 255, 0.12);
+        border-color: rgba(93, 176, 255, 0.5);
+      }
+
+      .shorten-btn {
+        background: linear-gradient(135deg, #5db0ff 0%, #4a9fef 100%);
+        border: 1px solid rgba(93, 176, 255, 0.3);
+        color: white;
+        padding: 10px 20px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+        white-space: nowrap;
+      }
+
+      .shorten-btn:hover {
+        background: linear-gradient(135deg, #6dbdff 0%, #5aafff 100%);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(93, 176, 255, 0.3);
+      }
+
+      .shorten-btn:active {
+        transform: translateY(0);
+      }
+
+      .shorten-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .result-box {
+        background: rgba(93, 176, 255, 0.1);
+        border: 1px solid rgba(93, 176, 255, 0.3);
+        border-radius: 6px;
+        padding: 10px 12px;
+        font-size: 12px;
+        color: #5db0ff;
+        text-align: center;
+        word-break: break-all;
+        display: none;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .result-box:hover {
+        background: rgba(93, 176, 255, 0.15);
+      }
+
+      .result-box.show {
+        display: block;
       }
 
       .history-section {
@@ -108,31 +210,33 @@
       }
 
       .history-title {
-        font-size: 19px;
+        font-size: 16px;
         font-weight: 600;
-        margin-bottom: 18px;
+        margin-bottom: 12px;
         text-align: center;
         letter-spacing: -0.3px;
+        opacity: 0.95;
       }
 
       .history-item {
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        border-radius: 0;
-        padding: 14px 16px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 12px 14px;
         margin-bottom: 10px;
         transition: all 0.2s ease;
         cursor: pointer;
       }
 
       .history-item:hover {
-        background: rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.08);
         border-color: rgba(255, 255, 255, 0.2);
         transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
       }
 
       .history-item-short {
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 500;
         color: #5db0ff;
         margin-bottom: 6px;
@@ -151,7 +255,7 @@
         color: rgba(255, 255, 255, 0.5);
         word-break: break-all;
         line-height: 1.4;
-        margin-bottom: 6px;
+        margin-bottom: 5px;
       }
 
       .history-item-date {
@@ -163,27 +267,27 @@
       .no-history {
         text-align: center;
         color: rgba(255, 255, 255, 0.5);
-        font-size: 14px;
-        margin-top: 60px;
+        font-size: 13px;
+        margin-top: 40px;
         line-height: 1.6;
       }
 
       .clear-history-btn {
-        background: rgba(255, 59, 48, 0.15);
+        background: rgba(255, 59, 48, 0.12);
         border: 1px solid rgba(255, 59, 48, 0.3);
         color: #ff453a;
-        padding: 10px 18px;
-        border-radius: 0;
+        padding: 9px 16px;
+        border-radius: 6px;
         cursor: pointer;
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 500;
-        margin-top: 20px;
+        margin-top: 16px;
         transition: all 0.2s ease;
         display: inline-block;
       }
 
       .clear-history-btn:hover {
-        background: rgba(255, 59, 48, 0.25);
+        background: rgba(255, 59, 48, 0.2);
         border-color: rgba(255, 59, 48, 0.5);
         transform: translateY(-1px);
       }
@@ -194,11 +298,11 @@
 
       .bottom-icon {
         position: absolute;
-        bottom: 16px;
-        right: 20px;
-        width: 85px;
+        bottom: 14px;
+        right: 18px;
+        width: 80px;
         height: auto;
-        opacity: 0.8;
+        opacity: 0.75;
       }
 
       .button-container {
@@ -213,12 +317,26 @@
       </div>
       <div class="top-bar-right">
         <img src="assets/History W.svg" alt="History Icon" title="History" id="historyBtn" />
-        <img src="assets/Extension+/Chrome Extension Icon.svg" alt="Chrome Extension Icon" />
+        <img src="assets/Extension+/Chrome Extension Icon.svg" alt="Chrome Extension Icon" title="Extension" />
       </div>
       <img class="colorful-line" src="assets/Extension+/WS Chrome Line.svg" alt="Colorful Line" />
     </div>
 
     <div class="content-area">
+      <div class="shorten-section">
+        <div class="shorten-title">Shorten URL</div>
+        <div class="input-group">
+          <input 
+            type="text" 
+            class="url-input" 
+            id="urlInput" 
+            placeholder="Enter URL or use current tab"
+          />
+          <button class="shorten-btn" id="shortenBtn">Shorten</button>
+        </div>
+        <div class="result-box" id="resultBox">Click to copy</div>
+      </div>
+
       <div class="history-section">
         <div class="history-title">Recent URLs</div>
         <div id="historyList"></div>
@@ -231,7 +349,7 @@
     <img
       class="bottom-icon"
       src="assets/Extension+/Extension Chrome WS W.svg"
-      alt="Extension Chrome WS B"
+      alt="Extension Chrome WS"
     />
 
     <script src="popup.js"></script>

@@ -15,13 +15,14 @@
     "<all_urls>"
   ],
   "action": {
+    "default_popup": "popup.html",
     "default_icon": {
       "16": "assets/Shapes/W.svg",
       "32": "assets/Shapes/W.svg",
       "48": "assets/Shapes/W.svg",
       "128": "assets/Shapes/W.svg"
     },
-    "default_title": "Click to shorten current URL"
+    "default_title": "Click to open URL Shortener"
   },
   "icons": {
     "16": "assets/Shapes/W.svg",
@@ -34,11 +35,11 @@
     "type": "module"
   },
   "commands": {
-    "open-popup": {
+    "shorten-url": {
       "suggested_key": {
-        "default": "Ctrl+Shift+H"
+        "default": "Ctrl+Shift+S"
       },
-      "description": "Open history popup"
+      "description": "Shorten current URL"
     }
   }
 }
