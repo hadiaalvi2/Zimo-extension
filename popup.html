@@ -1,357 +1,227 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Quick URL Shortener</title>
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>URL Shortener</title>
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+  />
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
 
-      html, body {
-        width: 520px;
-        height: 505px;
-        overflow: hidden;
-        background: transparent;
-      }
+    body {
+      width: 400px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+      background: linear-gradient(180deg, #3a3a3a 0%, #2a2a2a 100%);
+      color: #fff;
+    }
 
-      body {
-        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-        color: white;
-        display: flex;
-        flex-direction: column;
-        position: relative;
+    .content {
+      padding: 20px 16px 16px;
+    }
 
-        /* Glassmorphism effect matching the image */
-        background: rgba(28, 28, 30, 0.88);
-        backdrop-filter: blur(40px) saturate(180%);
-        -webkit-backdrop-filter: blur(40px) saturate(180%);
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        border-radius: 12px;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
-      }
+    .card {
+      background: rgba(40, 40, 40, 0.69);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      backdrop-filter: blur(13px) brightness(0.14);
+      -webkit-backdrop-filter: blur(13px) brightness(0.14);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    }
 
-      .top-bar {
-        width: 100%;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 14px 20px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        position: relative;
-        background: rgba(255, 255, 255, 0.02);
-        border-radius: 12px 12px 0 0;
-      }
+    .source-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
 
-      .top-bar-left {
-        display: flex;
-        align-items: center;
-      }
+    .source-logo {
+      width: 45px;
+      height: 45px;
+      background: #bb1919;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
 
-      .top-bar-left img {
-        height: 28px;
-        width: auto;
-        opacity: 0.95;
-      }
+    .source-info {
+      flex: 1;
+      min-width: 0;
+    }
 
-      .top-bar-right {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-      }
+    .short-url {
+      font-size: 15px;
+      font-weight: 600;
+      color: #5db0ff;
+      margin-bottom: 4px;
+      word-break: break-all;
+      cursor: pointer;
+      transition: color 0.2s;
+    }
 
-      .top-bar-right img {
-        height: 24px;
-        width: 24px;
-        opacity: 0.75;
-        cursor: pointer;
-        transition: all 0.2s ease;
-      }
+    .short-url:hover {
+      color: #7dc3ff;
+      text-decoration: underline;
+    }
 
-      .top-bar-right img:hover {
-        opacity: 1;
-        transform: scale(1.1);
-      }
+    .page-title {
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.9);
+      line-height: 1.4;
+      margin-bottom: 8px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
 
-      .colorful-line {
-        position: absolute;
-        right: 0;
-        top: 0;
-        height: 100%;
-        width: 5px;
-        object-fit: cover;
-        border-radius: 0 12px 0 0;
-      }
+    .original-url {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      word-break: break-all;
+      margin-bottom: 8px;
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
 
-      .content-area {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        padding: 20px 24px;
-        overflow-y: auto;
-      }
+    .timestamp {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      display: flex;
+      gap: 20px;
+    }
 
-      .content-area::-webkit-scrollbar {
-        width: 6px;
-      }
+    /* SHARE ICONS ROW */
+    .share-container {
+      position: relative;
+      padding: 10px 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      overflow: hidden;
+    }
 
-      .content-area::-webkit-scrollbar-track {
-        background: transparent;
-      }
+    .nav-btn {
+      background: none;
+      border: none;
+      color: rgba(255, 255, 255, 0.5);
+      cursor: pointer;
+      font-size: 16px;
+      padding: 6px;
+      flex-shrink: 0;
+      transition: all 0.3s;
+    }
 
-      .content-area::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.15);
-        border-radius: 3px;
-      }
+    .nav-btn:hover {
+      color: #fff;
+      transform: scale(1.1);
+    }
 
-      .content-area::-webkit-scrollbar-thumb:hover {
-        background: rgba(255, 255, 255, 0.25);
-      }
+    .share-actions {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      overflow: hidden;
+      scroll-behavior: smooth;
+      width: 85%;
+    }
 
-      .shorten-section {
-        width: 100%;
-        margin-bottom: 24px;
-        padding-bottom: 20px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-      }
+    .share-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: transform 0.2s ease;
+    }
 
-      .shorten-title {
-        font-size: 16px;
-        font-weight: 600;
-        margin-bottom: 12px;
-        text-align: center;
-        letter-spacing: -0.3px;
-        opacity: 0.95;
-      }
+    .share-btn img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      opacity: 0.85;
+      transition: all 0.3s;
+    }
 
-      .input-group {
-        display: flex;
-        gap: 8px;
-        margin-bottom: 12px;
-      }
-
-      .url-input {
-        flex: 1;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        border-radius: 6px;
-        padding: 10px 12px;
-        color: white;
-        font-size: 12px;
-        font-family: inherit;
-        outline: none;
-        transition: all 0.2s ease;
-      }
-
-      .url-input::placeholder {
-        color: rgba(255, 255, 255, 0.4);
-      }
-
-      .url-input:focus {
-        background: rgba(255, 255, 255, 0.12);
-        border-color: rgba(93, 176, 255, 0.5);
-      }
-
-      .shorten-btn {
-        background: linear-gradient(135deg, #5db0ff 0%, #4a9fef 100%);
-        border: 1px solid rgba(93, 176, 255, 0.3);
-        color: white;
-        padding: 10px 20px;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 12px;
-        font-weight: 600;
-        transition: all 0.2s ease;
-        white-space: nowrap;
-      }
-
-      .shorten-btn:hover {
-        background: linear-gradient(135deg, #6dbdff 0%, #5aafff 100%);
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(93, 176, 255, 0.3);
-      }
-
-      .shorten-btn:active {
-        transform: translateY(0);
-      }
-
-      .shorten-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
-
-      .result-box {
-        background: rgba(93, 176, 255, 0.1);
-        border: 1px solid rgba(93, 176, 255, 0.3);
-        border-radius: 6px;
-        padding: 10px 12px;
-        font-size: 12px;
-        color: #5db0ff;
-        text-align: center;
-        word-break: break-all;
-        display: none;
-        cursor: pointer;
-        transition: all 0.2s ease;
-      }
-
-      .result-box:hover {
-        background: rgba(93, 176, 255, 0.15);
-      }
-
-      .result-box.show {
-        display: block;
-      }
-
-      .history-section {
-        width: 100%;
-      }
-
-      .history-title {
-        font-size: 16px;
-        font-weight: 600;
-        margin-bottom: 12px;
-        text-align: center;
-        letter-spacing: -0.3px;
-        opacity: 0.95;
-      }
-
-      .history-item {
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 8px;
-        padding: 12px 14px;
-        margin-bottom: 10px;
-        transition: all 0.2s ease;
-        cursor: pointer;
-      }
-
-      .history-item:hover {
-        background: rgba(255, 255, 255, 0.08);
-        border-color: rgba(255, 255, 255, 0.2);
-        transform: translateY(-1px);
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-      }
-
-      .history-item-short {
-        font-size: 13px;
-        font-weight: 500;
-        color: #5db0ff;
-        margin-bottom: 6px;
-        word-break: break-all;
-        cursor: pointer;
-        transition: color 0.2s ease;
-      }
-
-      .history-item-short:hover {
-        color: #7dc3ff;
-        text-decoration: underline;
-      }
-
-      .history-item-long {
-        font-size: 11px;
-        color: rgba(255, 255, 255, 0.5);
-        word-break: break-all;
-        line-height: 1.4;
-        margin-bottom: 5px;
-      }
-
-      .history-item-date {
-        font-size: 10px;
-        color: rgba(255, 255, 255, 0.35);
-        margin-top: 4px;
-      }
-
-      .no-history {
-        text-align: center;
-        color: rgba(255, 255, 255, 0.5);
-        font-size: 13px;
-        margin-top: 40px;
-        line-height: 1.6;
-      }
-
-      .clear-history-btn {
-        background: rgba(255, 59, 48, 0.12);
-        border: 1px solid rgba(255, 59, 48, 0.3);
-        color: #ff453a;
-        padding: 9px 16px;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 12px;
-        font-weight: 500;
-        margin-top: 16px;
-        transition: all 0.2s ease;
-        display: inline-block;
-      }
-
-      .clear-history-btn:hover {
-        background: rgba(255, 59, 48, 0.2);
-        border-color: rgba(255, 59, 48, 0.5);
-        transform: translateY(-1px);
-      }
-
-      .clear-history-btn:active {
-        transform: translateY(0);
-      }
-
-      .bottom-icon {
-        position: absolute;
-        bottom: 14px;
-        right: 18px;
-        width: 80px;
-        height: auto;
-        opacity: 0.75;
-      }
-
-      .button-container {
-        text-align: center;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="top-bar">
-      <div class="top-bar-left">
-        <img src="assets/Extension+/ZIMO WS Duo Chrome B.svg" alt="ZIMO WS" />
-      </div>
-      <div class="top-bar-right">
-        <img src="assets/History W.svg" alt="History Icon" title="History" id="historyBtn" />
-        <img src="assets/Extension+/Chrome Extension Icon.svg" alt="Chrome Extension Icon" title="Extension" />
-      </div>
-      <img class="colorful-line" src="assets/Extension+/WS Chrome Line.svg" alt="Colorful Line" />
-    </div>
-
-    <div class="content-area">
-      <div class="shorten-section">
-        <div class="shorten-title">Shorten URL</div>
-        <div class="input-group">
-          <input 
-            type="text" 
-            class="url-input" 
-            id="urlInput" 
-            placeholder="Enter URL or use current tab"
-          />
-          <button class="shorten-btn" id="shortenBtn">Shorten</button>
+    .share-btn:hover img {
+      opacity: 1;
+      transform: scale(1.15);
+      filter: brightness(1.2);
+    }
+  </style>
+</head>
+<body>
+  <div class="content">
+    <div class="card">
+      <div class="source-header">
+        <div class="source-logo">SRC</div>
+        <div class="source-info">
+          <div class="short-url" id="shortUrl" title="Click to copy">Shortening...</div>
         </div>
-        <div class="result-box" id="resultBox">Click to copy</div>
       </div>
 
-      <div class="history-section">
-        <div class="history-title">Recent URLs</div>
-        <div id="historyList"></div>
-        <div class="button-container">
-          <button class="clear-history-btn" id="clearHistory">Clear History</button>
-        </div>
+      <div class="page-title" id="pageTitle">Loading page title...</div>
+      <div class="original-url" id="originalUrl">Loading URL...</div>
+      <div class="timestamp">
+        <span id="timeDisplay">--:--</span>
+        <span id="dateDisplay">-- ------ ----</span>
       </div>
     </div>
 
-    <img
-      class="bottom-icon"
-      src="assets/Extension+/Extension Chrome WS W.svg"
-      alt="Extension Chrome WS"
-    />
+  
+    <div class="share-container">
+      <button class="nav-btn" id="scrollLeft"><i class="fas fa-chevron-left"></i></button>
 
-    <script src="popup.js"></script>
-  </body>
+      <div class="share-actions" id="shareActions">
+        <button class="share-btn" title="Copy"><img src="assets/Share/Copy Icon W.svg" alt="Copy"></button>
+        <button class="share-btn" title="BlueSky"><img src="assets/Share/BlueSky W.svg" alt="BlueSky"></button>
+        <button class="share-btn" title="Discord"><img src="assets/Share/Discord W.svg" alt="Discord"></button>
+        <button class="share-btn" title="Facebook"><img src="assets/Share/Facebook W.svg" alt="Facebook"></button>
+        <button class="share-btn" title="OMN"><img src="assets/Share/OMN W.svg" alt="OMN"></button>
+        <button class="share-btn" title="Reddit"><img src="assets/Share/Reddit W.svg" alt="Reddit"></button>
+        <button class="share-btn" title="Telegram"><img src="assets/Share/Telegram W.svg" alt="Telegram"></button>
+        <button class="share-btn" title="Threads"><img src="assets/Share/Threads W.svg" alt="Threads"></button>
+        <button class="share-btn" title="X"><img src="assets/Share/X W.svg" alt="X"></button>
+        <button class="share-btn" title="WhatsApp"><img src="assets/Share/WhatsApp W.svg" alt="WhatsApp"></button>
+      </div>
+
+      <button class="nav-btn" id="scrollRight"><i class="fas fa-chevron-right"></i></button>
+    </div>
+  </div>
+
+  <script>
+    const shareActions = document.getElementById("shareActions");
+    const leftBtn = document.getElementById("scrollLeft");
+    const rightBtn = document.getElementById("scrollRight");
+
+    leftBtn.addEventListener("click", () => {
+      shareActions.scrollBy({ left: -120, behavior: "smooth" });
+    });
+
+    rightBtn.addEventListener("click", () => {
+      shareActions.scrollBy({ left: 120, behavior: "smooth" });
+    });
+  </script>
+</body>
 </html>
