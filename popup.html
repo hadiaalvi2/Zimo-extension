@@ -19,23 +19,89 @@
       width: 400px;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
         "Helvetica Neue", Arial, sans-serif;
-      background: linear-gradient(180deg, #3a3a3a 0%, #2a2a2a 100%);
+      background: rgba(40, 40, 40, 0.69);
+      backdrop-filter: blur(13px) brightness(0.14);
+      -webkit-backdrop-filter: blur(13px) brightness(0.14);
       color: #fff;
+      min-height: 300px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px;
+      background: transparent;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .logo img {
+      height: 32px;
+      object-fit: contain;
+    }
+
+    .logo-text {
+      background: linear-gradient(90deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, #ffeaa7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header-icons {
+      display: flex;
+      gap: 12px;
+    }
+
+    .header-icon {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.3s;
+      border-radius: 6px;
+    }
+
+    .header-icon:hover {
+      background: rgba(255, 255, 255, 0.1);
+      transform: scale(1.05);
+    }
+
+    .header-icon img {
+      width: 20px;
+      height: 20px;
+      object-fit: contain;
+      opacity: 0.9;
+      transition: all 0.3s;
+    }
+
+    .header-icon:hover img {
+      opacity: 1;
     }
 
     .content {
       padding: 20px 16px 16px;
+      flex: 1;
     }
 
     .card {
-      background: rgba(40, 40, 40, 0.69);
+      background: transparent;
       border-radius: 12px;
       padding: 16px;
       margin-bottom: 16px;
-      backdrop-filter: blur(13px) brightness(0.14);
-      -webkit-backdrop-filter: blur(13px) brightness(0.14);
       border: 1px solid rgba(255, 255, 255, 0.05);
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+      box-shadow: none;
     }
 
     .source-header {
@@ -56,6 +122,7 @@
       font-weight: bold;
       font-size: 13px;
       flex-shrink: 0;
+      color: white;
     }
 
     .source-info {
@@ -107,6 +174,36 @@
       gap: 20px;
     }
 
+    .loading-state {
+      text-align: center;
+      padding: 20px;
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .loading-spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: #5db0ff;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .error-state {
+      background: rgba(255, 59, 48, 0.1);
+      border: 1px solid rgba(255, 59, 48, 0.3);
+      border-radius: 8px;
+      padding: 12px;
+      color: #ff453a;
+      font-size: 13px;
+      text-align: center;
+    }
+
     /* SHARE ICONS ROW */
     .share-container {
       position: relative;
@@ -121,26 +218,52 @@
     .nav-btn {
       background: none;
       border: none;
-      color: rgba(255, 255, 255, 0.5);
       cursor: pointer;
-      font-size: 16px;
       padding: 6px;
       flex-shrink: 0;
       transition: all 0.3s;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .nav-btn:hover {
-      color: #fff;
       transform: scale(1.1);
+    }
+
+    .nav-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .nav-btn img {
+      width: 16px;
+      height: 16px;
+      object-fit: contain;
+      opacity: 0.7;
+      transition: all 0.3s;
+    }
+
+    .nav-btn:hover img {
+      opacity: 1;
     }
 
     .share-actions {
       display: flex;
       align-items: center;
       gap: 14px;
-      overflow: hidden;
+      overflow-x: auto;
+      overflow-y: hidden;
       scroll-behavior: smooth;
       width: 85%;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    .share-actions::-webkit-scrollbar {
+      display: none;
     }
 
     .share-btn {
@@ -154,6 +277,7 @@
       justify-content: center;
       flex-shrink: 0;
       transition: transform 0.2s ease;
+      position: relative;
     }
 
     .share-btn img {
@@ -169,59 +293,142 @@
       transform: scale(1.15);
       filter: brightness(1.2);
     }
+
+    .footer {
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.4);
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      margin-top: auto;
+    }
+
+    .footer-left {
+      flex: 1;
+    }
+
+    .footer-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .footer-right img {
+      height: 14px;
+      opacity: 0.5;
+      object-fit: contain;
+    }
+
+    .copy-feedback {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(93, 176, 255, 0.95);
+      color: white;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      z-index: 1000;
+      animation: fadeInOut 2s ease-in-out;
+    }
+
+    @keyframes fadeInOut {
+      0%, 100% { opacity: 0; }
+      10%, 90% { opacity: 1; }
+    }
   </style>
 </head>
 <body>
+  <div class="header">
+     <div class="logo">
+      <img src="assets/Extension+/ZIMO WS Duo Chrome W.svg" alt="WS ZIMO">
+    </div>
+  
+      <div class="header-icon" title="Chrome Extension">
+        <img src="assets/Extension+/Chrome Extension Icon.svg" alt="Extension">
+      </div>
+    </div>
+  </div>
+
   <div class="content">
-    <div class="card">
+    <div id="loadingState" class="loading-state" style="display: none;">
+      <div class="loading-spinner"></div>
+      <p style="margin-top: 12px;">Shortening URL...</p>
+    </div>
+
+    <div id="errorState" class="error-state" style="display: none;"></div>
+
+    <div id="mainCard" class="card" style="display: none;">
       <div class="source-header">
-        <div class="source-logo">SRC</div>
+        <div class="source-logo" id="sourceLogo">BBC</div>
         <div class="source-info">
-          <div class="short-url" id="shortUrl" title="Click to copy">Shortening...</div>
+          <div class="short-url" id="shortUrl" title="Click to copy">zimo.ws/abc123</div>
         </div>
       </div>
 
-      <div class="page-title" id="pageTitle">Loading page title...</div>
-      <div class="original-url" id="originalUrl">Loading URL...</div>
+      <div class="page-title" id="pageTitle">Page title will appear here</div>
+      <div class="original-url" id="originalUrl">https://example.com</div>
       <div class="timestamp">
         <span id="timeDisplay">--:--</span>
         <span id="dateDisplay">-- ------ ----</span>
       </div>
     </div>
 
-  
     <div class="share-container">
-      <button class="nav-btn" id="scrollLeft"><i class="fas fa-chevron-left"></i></button>
+      <button class="nav-btn" id="scrollLeft">
+        <img src="assets/arrow-left.svg" alt="Left">
+      </button>
 
       <div class="share-actions" id="shareActions">
-        <button class="share-btn" title="Copy"><img src="assets/Share/Copy Icon W.svg" alt="Copy"></button>
-        <button class="share-btn" title="BlueSky"><img src="assets/Share/BlueSky W.svg" alt="BlueSky"></button>
-        <button class="share-btn" title="Discord"><img src="assets/Share/Discord W.svg" alt="Discord"></button>
-        <button class="share-btn" title="Facebook"><img src="assets/Share/Facebook W.svg" alt="Facebook"></button>
-        <button class="share-btn" title="OMN"><img src="assets/Share/OMN W.svg" alt="OMN"></button>
-        <button class="share-btn" title="Reddit"><img src="assets/Share/Reddit W.svg" alt="Reddit"></button>
-        <button class="share-btn" title="Telegram"><img src="assets/Share/Telegram W.svg" alt="Telegram"></button>
-        <button class="share-btn" title="Threads"><img src="assets/Share/Threads W.svg" alt="Threads"></button>
-        <button class="share-btn" title="X"><img src="assets/Share/X W.svg" alt="X"></button>
-        <button class="share-btn" title="WhatsApp"><img src="assets/Share/WhatsApp W.svg" alt="WhatsApp"></button>
+        <button class="share-btn" title="Copy" data-action="copy">
+          <img src="assets/Share/Copy Icon W.svg" alt="Copy">
+        </button>
+        <button class="share-btn" title="BlueSky" data-action="bluesky">
+          <img src="assets/Share/BlueSky W.svg" alt="BlueSky">
+        </button>
+        <button class="share-btn" title="Discord" data-action="discord">
+          <img src="assets/Share/Discord W.svg" alt="Discord">
+        </button>
+        <button class="share-btn" title="Facebook" data-action="facebook">
+          <img src="assets/Share/Facebook W.svg" alt="Facebook">
+        </button>
+        <button class="share-btn" title="OMN" data-action="omn">
+          <img src="assets/Share/OMN W.svg" alt="OMN">
+        </button>
+        <button class="share-btn" title="Reddit" data-action="reddit">
+          <img src="assets/Share/Reddit W.svg" alt="Reddit">
+        </button>
+        <button class="share-btn" title="Telegram" data-action="telegram">
+          <img src="assets/Share/Telegram W.svg" alt="Telegram">
+        </button>
+        <button class="share-btn" title="Threads" data-action="threads">
+          <img src="assets/Share/Threads W.svg" alt="Threads">
+        </button>
+        <button class="share-btn" title="X" data-action="twitter">
+          <img src="assets/Share/X W.svg" alt="X">
+        </button>
+        <button class="share-btn" title="WhatsApp" data-action="whatsapp">
+          <img src="assets/Share/WhatsApp W.svg" alt="WhatsApp">
+        </button>
       </div>
 
-      <button class="nav-btn" id="scrollRight"><i class="fas fa-chevron-right"></i></button>
+      <button class="nav-btn" id="scrollRight">
+        <img src="assets/arrow-right.svg" alt="Right">
+      </button>
     </div>
   </div>
 
-  <script>
-    const shareActions = document.getElementById("shareActions");
-    const leftBtn = document.getElementById("scrollLeft");
-    const rightBtn = document.getElementById("scrollRight");
+  <div class="footer">
+    <div class="footer-left"></div>
+    <div class="footer-right">
+      <img src="assets/Extension+/Extension Chrome WS W.svg" alt="Extension">
+    </div>
+  </div>
 
-    leftBtn.addEventListener("click", () => {
-      shareActions.scrollBy({ left: -120, behavior: "smooth" });
-    });
-
-    rightBtn.addEventListener("click", () => {
-      shareActions.scrollBy({ left: 120, behavior: "smooth" });
-    });
-  </script>
+  <script src="popup.js"></script>
 </body>
 </html>
