@@ -8,8 +8,6 @@ const originalUrlEl = document.getElementById('originalUrl');
 const timeDisplay = document.getElementById('timeDisplay');
 const dateDisplay = document.getElementById('dateDisplay');
 const sourceLogoEl = document.getElementById('sourceLogo');
-const refreshBtn = document.getElementById('refreshBtn');
-const settingsBtn = document.getElementById('settingsBtn');
 const shareActions = document.getElementById('shareActions');
 const scrollLeftBtn = document.getElementById('scrollLeft');
 const scrollRightBtn = document.getElementById('scrollRight');
@@ -40,95 +38,139 @@ async function getCurrentTab() {
   }
 }
 
-// Fetch comprehensive page metadata
-async function fetchPageMetadata(url) {
+// Fetch comprehensive page metadata using content script
+async function fetchPageMetadata(tabId, url) {
   try {
-    const response = await fetch(url, {
-      headers: {
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+    // Inject script to extract metadata from the actual page
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      func: () => {
+        // Extract metadata from the current page
+        const getMetaContent = (selectors) => {
+          for (const selector of selectors) {
+            const element = document.querySelector(selector);
+            if (element) {
+              return element.content || element.textContent || element.href;
+            }
+          }
+          return '';
+        };
+
+        const metadata = {
+          // Title - try multiple sources
+          title: getMetaContent([
+            'meta[property="og:title"]',
+            'meta[name="twitter:title"]',
+            'meta[name="title"]',
+            'title'
+          ]) || document.title || 'Untitled Page',
+          
+          // Description
+          description: getMetaContent([
+            'meta[property="og:description"]',
+            'meta[name="twitter:description"]',
+            'meta[name="description"]'
+          ]),
+          
+          // Site name
+          siteName: getMetaContent([
+            'meta[property="og:site_name"]',
+            'meta[name="application-name"]'
+          ]),
+          
+          // Favicon - try multiple sources
+          favicon: getMetaContent([
+            'link[rel="icon"]',
+            'link[rel="shortcut icon"]',
+            'link[rel="apple-touch-icon"]',
+            'link[rel="apple-touch-icon-precomposed"]'
+          ]),
+          
+          // Image
+          image: getMetaContent([
+            'meta[property="og:image"]',
+            'meta[property="og:image:url"]',
+            'meta[name="twitter:image"]',
+            'meta[name="twitter:image:src"]'
+          ]),
+          
+          // Type
+          type: getMetaContent(['meta[property="og:type"]']) || 'website',
+          
+          // Author
+          author: getMetaContent([
+            'meta[name="author"]',
+            'meta[property="article:author"]'
+          ]),
+          
+          // Keywords
+          keywords: getMetaContent(['meta[name="keywords"]']),
+          
+          // Published time
+          publishedTime: getMetaContent([
+            'meta[property="article:published_time"]',
+            'meta[name="date"]',
+            'meta[name="publish_date"]'
+          ]),
+          
+          // Canonical URL
+          canonical: getMetaContent(['link[rel="canonical"]']),
+          
+          // Language
+          language: document.documentElement.lang || 
+                    getMetaContent(['meta[http-equiv="content-language"]']) ||
+                    'en',
+          
+          // Theme color
+          themeColor: getMetaContent(['meta[name="theme-color"]'])
+        };
+
+        // Clean up the metadata
+        Object.keys(metadata).forEach(key => {
+          if (typeof metadata[key] === 'string') {
+            metadata[key] = metadata[key].trim();
+          }
+        });
+
+        return metadata;
       }
     });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+
+    if (results && results[0] && results[0].result) {
+      const metadata = results[0].result;
+      
+      // Resolve relative favicon URLs
+      if (metadata.favicon && !metadata.favicon.startsWith('http')) {
+        try {
+          metadata.favicon = new URL(metadata.favicon, url).href;
+        } catch (e) {
+          metadata.favicon = `${new URL(url).origin}/favicon.ico`;
+        }
+      }
+      
+      // Add site name fallback
+      if (!metadata.siteName) {
+        metadata.siteName = extractSiteName(url);
+      }
+      
+      // Add canonical URL fallback
+      if (!metadata.canonical) {
+        metadata.canonical = url;
+      }
+      
+      // Add favicon fallback
+      if (!metadata.favicon) {
+        metadata.favicon = `${new URL(url).origin}/favicon.ico`;
+      }
+      
+      return metadata;
     }
     
-    const html = await response.text();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
+    throw new Error('Could not extract metadata');
     
-    // Extract all metadata
-    const metadata = {
-      // Title - try multiple sources
-      title: doc.querySelector('meta[property="og:title"]')?.content ||
-             doc.querySelector('meta[name="twitter:title"]')?.content ||
-             doc.querySelector('meta[name="title"]')?.content ||
-             doc.querySelector('title')?.textContent ||
-             'Untitled Page',
-      
-      // Description
-      description: doc.querySelector('meta[property="og:description"]')?.content ||
-                   doc.querySelector('meta[name="twitter:description"]')?.content ||
-                   doc.querySelector('meta[name="description"]')?.content ||
-                   '',
-      
-      // Site name
-      siteName: doc.querySelector('meta[property="og:site_name"]')?.content ||
-                extractSiteName(url),
-      
-      // Favicon - try multiple sources
-      favicon: doc.querySelector('link[rel="icon"]')?.href ||
-               doc.querySelector('link[rel="shortcut icon"]')?.href ||
-               doc.querySelector('link[rel="apple-touch-icon"]')?.href ||
-               doc.querySelector('meta[property="og:image"]')?.content ||
-               `${new URL(url).origin}/favicon.ico`,
-      
-      // Image
-      image: doc.querySelector('meta[property="og:image"]')?.content ||
-             doc.querySelector('meta[name="twitter:image"]')?.content ||
-             '',
-      
-      // Type
-      type: doc.querySelector('meta[property="og:type"]')?.content || 'website',
-      
-      // Author
-      author: doc.querySelector('meta[name="author"]')?.content ||
-              doc.querySelector('meta[property="article:author"]')?.content ||
-              '',
-      
-      // Keywords
-      keywords: doc.querySelector('meta[name="keywords"]')?.content || '',
-      
-      // Published time
-      publishedTime: doc.querySelector('meta[property="article:published_time"]')?.content ||
-                     doc.querySelector('meta[name="date"]')?.content ||
-                     '',
-      
-      // Canonical URL
-      canonical: doc.querySelector('link[rel="canonical"]')?.href || url,
-      
-      // Language
-      language: doc.documentElement.lang || 
-                doc.querySelector('meta[http-equiv="content-language"]')?.content ||
-                'en',
-      
-      // Theme color
-      themeColor: doc.querySelector('meta[name="theme-color"]')?.content || ''
-    };
-    
-    // Clean up the metadata
-    metadata.title = metadata.title.trim();
-    metadata.description = metadata.description.trim();
-    metadata.siteName = metadata.siteName.trim();
-    
-    // Resolve relative favicon URLs
-    if (metadata.favicon && !metadata.favicon.startsWith('http')) {
-      metadata.favicon = new URL(metadata.favicon, url).href;
-    }
-    
-    return metadata;
   } catch (error) {
     console.error('Error fetching metadata:', error);
+    // Return fallback metadata
     return {
       title: 'Page Title',
       description: '',
@@ -247,8 +289,8 @@ async function shortenCurrentTab() {
 
     currentOriginalUrl = tab.url;
     
-    // Fetch comprehensive metadata
-    currentMetadata = await fetchPageMetadata(currentOriginalUrl);
+    // Fetch comprehensive metadata using content script
+    currentMetadata = await fetchPageMetadata(tab.id, currentOriginalUrl);
     
     // Use metadata title or fall back to tab title
     currentPageTitle = currentMetadata.title || tab.title || 'Untitled Page';
@@ -412,23 +454,6 @@ function setupEventListeners() {
     copyToClipboard(currentShortUrl);
   });
   
-  // Refresh button
-  refreshBtn.addEventListener('click', () => {
-    const img = refreshBtn.querySelector('img');
-    img.style.transform = 'rotate(360deg)';
-    img.style.transition = 'transform 0.5s ease';
-    setTimeout(() => {
-      img.style.transform = '';
-      img.style.transition = '';
-    }, 500);
-    shortenCurrentTab();
-  });
-  
-  // Settings button (placeholder)
-  settingsBtn.addEventListener('click', () => {
-    alert('Settings coming soon!');
-  });
-  
   // Share buttons
   document.querySelectorAll('.share-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -443,11 +468,13 @@ function setupEventListeners() {
   
   // Scroll buttons for share actions
   scrollLeftBtn.addEventListener('click', () => {
-    shareActions.scrollBy({ left: -120, behavior: 'smooth' });
+    shareActions.scrollBy({ left: -150, behavior: 'smooth' });
+    setTimeout(updateScrollButtons, 300);
   });
   
   scrollRightBtn.addEventListener('click', () => {
-    shareActions.scrollBy({ left: 120, behavior: 'smooth' });
+    shareActions.scrollBy({ left: 150, behavior: 'smooth' });
+    setTimeout(updateScrollButtons, 300);
   });
   
   // Update scroll button states
@@ -461,5 +488,4 @@ function updateScrollButtons() {
   
   scrollLeftBtn.disabled = scrollLeft <= 0;
   scrollRightBtn.disabled = scrollLeft + clientWidth >= scrollWidth - 1;
-  
 }
