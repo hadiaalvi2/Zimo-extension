@@ -1,7 +1,10 @@
-// DOM Elements
 const loadingState = document.getElementById('loadingState');
 const errorState = document.getElementById('errorState');
 const mainCard = document.getElementById('mainCard');
+const historyView = document.getElementById('historyView');
+const historyList = document.getElementById('historyList');
+const emptyHistory = document.getElementById('emptyHistory');
+const historyIcon = document.getElementById('historyIcon');
 const shortUrlEl = document.getElementById('shortUrl');
 const pageTitleEl = document.getElementById('pageTitle');
 const originalUrlEl = document.getElementById('originalUrl');
@@ -11,16 +14,24 @@ const sourceLogoEl = document.getElementById('sourceLogo');
 const shareActions = document.getElementById('shareActions');
 const scrollLeftBtn = document.getElementById('scrollLeft');
 const scrollRightBtn = document.getElementById('scrollRight');
+const shareContainer = document.getElementById('shareContainer');
 
 let currentShortUrl = '';
 let currentPageTitle = '';
 let currentOriginalUrl = '';
 let currentMetadata = {};
+let isHistoryView = false;
 
 // Initialize on load
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
+  // Check if all required elements exist
+  if (!timeDisplay || !dateDisplay) {
+    console.error('Required DOM elements not found');
+    return;
+  }
+  
   updateDateTime();
   setInterval(updateDateTime, 1000);
   await shortenCurrentTab();
@@ -239,34 +250,43 @@ function getFaviconUrl(url, metadata) {
 
 // Shorten URL using multiple services
 async function shortenUrl(url) {
-  // Try TinyURL first
-  try {
-    const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`);
-    if (response.ok) {
-      return await response.text();
-    }
-  } catch (error) {
-    console.error('TinyURL failed:', error);
-  }
-
-  // Try is.gd as fallback
+  // Try is.gd first (direct redirect, no preview page)
   try {
     const response = await fetch(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(url)}`);
     if (response.ok) {
-      return await response.text();
+      const shortUrl = await response.text();
+      if (shortUrl && !shortUrl.includes('Error') && shortUrl.startsWith('http')) {
+        return shortUrl;
+      }
     }
   } catch (error) {
     console.error('is.gd failed:', error);
   }
 
-  // Try v.gd as second fallback
+  // Try v.gd as fallback (direct redirect, no preview page)
   try {
     const response = await fetch(`https://v.gd/create.php?format=simple&url=${encodeURIComponent(url)}`);
     if (response.ok) {
-      return await response.text();
+      const shortUrl = await response.text();
+      if (shortUrl && !shortUrl.includes('Error') && shortUrl.startsWith('http')) {
+        return shortUrl;
+      }
     }
   } catch (error) {
     console.error('v.gd failed:', error);
+  }
+
+  // Try TinyURL as last resort
+  try {
+    const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`);
+    if (response.ok) {
+      const shortUrl = await response.text();
+      if (shortUrl && !shortUrl.includes('Error') && shortUrl.startsWith('http')) {
+        return shortUrl;
+      }
+    }
+  } catch (error) {
+    console.error('TinyURL failed:', error);
   }
 
   throw new Error('All URL shortening services failed. Please try again later.');
@@ -307,6 +327,9 @@ async function shortenCurrentTab() {
     // Log metadata for debugging
     console.log('Fetched Metadata:', currentMetadata);
     
+    // Save to history
+    await saveToHistory(currentOriginalUrl, currentShortUrl, currentPageTitle, currentMetadata);
+    
   } catch (error) {
     console.error('Error:', error);
     showError(error.message);
@@ -336,6 +359,8 @@ function showLoading() {
   loadingState.style.display = 'block';
   errorState.style.display = 'none';
   mainCard.style.display = 'none';
+  historyView.style.display = 'none';
+  shareContainer.style.display = 'none';
 }
 
 // Show error state
@@ -344,6 +369,8 @@ function showError(message) {
   errorState.style.display = 'block';
   errorState.textContent = message;
   mainCard.style.display = 'none';
+  historyView.style.display = 'none';
+  shareContainer.style.display = 'none';
 }
 
 // Display result with metadata
@@ -351,6 +378,9 @@ function displayResult(shortUrl, title, originalUrl, domain, metadata) {
   loadingState.style.display = 'none';
   errorState.style.display = 'none';
   mainCard.style.display = 'block';
+  historyView.style.display = 'none';
+  shareContainer.style.display = 'flex';
+  isHistoryView = false;
   
   shortUrlEl.textContent = shortUrl;
   pageTitleEl.textContent = title;
@@ -449,6 +479,9 @@ function shareUrl(platform) {
 
 // Setup event listeners
 function setupEventListeners() {
+  // History icon click
+  historyIcon.addEventListener('click', toggleHistoryView);
+  
   // Short URL click - copy to clipboard
   shortUrlEl.addEventListener('click', () => {
     copyToClipboard(currentShortUrl);
@@ -488,4 +521,156 @@ function updateScrollButtons() {
   
   scrollLeftBtn.disabled = scrollLeft <= 0;
   scrollRightBtn.disabled = scrollLeft + clientWidth >= scrollWidth - 1;
+}
+
+// Save to history
+async function saveToHistory(longUrl, shortUrl, title, metadata) {
+  try {
+    // Check if chrome.storage is available
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
+      console.error('Chrome storage API not available');
+      return;
+    }
+    
+    // Get existing history
+    const result = await chrome.storage.local.get(['urlHistory']);
+    const history = result.urlHistory || [];
+    
+    // Add new entry at the beginning
+    history.unshift({
+      longUrl,
+      shortUrl,
+      title,
+      metadata,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Keep only last 50 entries
+    if (history.length > 50) {
+      history.splice(50);
+    }
+    
+    // Save updated history
+    await chrome.storage.local.set({ urlHistory: history });
+    console.log('History saved successfully:', history.length, 'items');
+    
+  } catch (error) {
+    console.error('Error saving to history:', error);
+  }
+}
+
+// Toggle history view
+async function toggleHistoryView() {
+  isHistoryView = !isHistoryView;
+  
+  if (isHistoryView) {
+    await showHistoryView();
+  } else {
+    showMainView();
+  }
+}
+
+// Show history view
+async function showHistoryView() {
+  mainCard.style.display = 'none';
+  loadingState.style.display = 'none';
+  errorState.style.display = 'none';
+  historyView.style.display = 'block';
+  shareContainer.style.display = 'none';
+  
+  await loadHistory();
+}
+
+// Show main view
+function showMainView() {
+  historyView.style.display = 'none';
+  mainCard.style.display = 'block';
+  shareContainer.style.display = 'flex';
+}
+
+// Load and display history
+async function loadHistory() {
+  try {
+    // Check if chrome.storage is available
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
+      console.error('Chrome storage API not available');
+      historyList.innerHTML = '';
+      emptyHistory.style.display = 'block';
+      return;
+    }
+    
+    // Get history from storage
+    const result = await chrome.storage.local.get(['urlHistory']);
+    const history = result.urlHistory || [];
+    
+    console.log('Loaded history:', history.length, 'items');
+    
+    if (history.length === 0) {
+      historyList.innerHTML = '';
+      emptyHistory.style.display = 'block';
+    } else {
+      emptyHistory.style.display = 'none';
+      displayHistory(history);
+    }
+    
+  } catch (error) {
+    console.error('Error loading history:', error);
+    historyList.innerHTML = '';
+    emptyHistory.style.display = 'block';
+  }
+}
+
+// Display history items
+function displayHistory(history) {
+  historyList.innerHTML = '';
+  
+  history.forEach((item, index) => {
+    const card = createHistoryCard(item, index);
+    historyList.appendChild(card);
+  });
+}
+
+// Create history card
+function createHistoryCard(item, index) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.style.cursor = 'pointer';
+  
+  // Extract domain for logo
+  const domain = extractDomain(item.longUrl);
+  
+  // Format timestamp
+  const date = new Date(item.timestamp);
+  const timeStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  const dateStr = `${String(date.getDate()).padStart(2, '0')} ${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][date.getMonth()]} ${date.getFullYear()}`;
+  
+  card.innerHTML = `
+    <div class="source-header">
+      <div class="source-logo" style="background: ${getRandomColor()}">${domain}</div>
+      <div class="source-info">
+        <div class="short-url" title="Click to copy">${item.shortUrl}</div>
+      </div>
+    </div>
+    <div class="page-title">${item.title || 'Untitled Page'}</div>
+    <div class="original-url" title="${item.longUrl}">${item.longUrl}</div>
+    <div class="timestamp">
+      <span>${timeStr}</span>
+      <span>${dateStr}</span>
+    </div>
+  `;
+  
+  // Click to copy
+  card.addEventListener('click', (e) => {
+    if (!e.target.closest('.share-btn')) {
+      copyToClipboard(item.shortUrl);
+    }
+  });
+  
+  return card;
+}
+
+// Get random color for logo
+function getRandomColor() {
+  const colors = ['#bb1919', '#1976d2', '#388e3c', '#f57c00', '#7b1fa2', '#c2185b'];
+  return colors[Math.floor(Math.random() * colors.length)];
 }

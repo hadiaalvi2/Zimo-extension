@@ -5,12 +5,28 @@
   "description": "Shorten URLs with one click",
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "storage",
+    "notifications",
+    "contextMenus"
   ],
   "host_permissions": [
     "<all_urls>"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "assets/Shapes/W.svg",
+      "48": "assets/Shapes/W.svg",
+      "128": "assets/Shapes/W.svg"
+    }
+  },
+  "icons": {
+    "16": "assets/Shapes/W.svg",
+    "48": "assets/Shapes/W.svg",
+    "128": "assets/Shapes/W.svg"
   }
 }

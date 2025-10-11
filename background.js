@@ -29,9 +29,9 @@ chrome.action.onClicked.addListener(async (tab) => {
   // Wait a bit for popup to load, then shorten URL
   setTimeout(async () => {
     try {
-      // Shorten URL using TinyURL API with better error handling
-      const response = await fetch(
-        `https://tinyurl.com/api-create.php?url=${encodeURIComponent(urlToShorten)}`,
+      // Try is.gd first (direct redirect, no preview)
+      let response = await fetch(
+        `https://is.gd/create.php?format=simple&url=${encodeURIComponent(urlToShorten)}`,
         {
           method: 'GET',
           headers: {
@@ -40,11 +40,30 @@ chrome.action.onClicked.addListener(async (tab) => {
         }
       );
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      let shortUrl = '';
+      
+      if (response.ok) {
+        shortUrl = await response.text();
       }
       
-      const shortUrl = await response.text();
+      // Fallback to TinyURL if is.gd fails
+      if (!shortUrl || shortUrl.includes('Error') || !shortUrl.startsWith('http')) {
+        response = await fetch(
+          `https://tinyurl.com/api-create.php?url=${encodeURIComponent(urlToShorten)}`,
+          {
+            method: 'GET',
+            headers: {
+              'Accept': 'text/plain'
+            }
+          }
+        );
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        shortUrl = await response.text();
+      }
       
       // Validate the response
       if (!shortUrl || shortUrl.includes('Error') || !shortUrl.startsWith('http')) {
@@ -251,10 +270,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           throw new Error('Invalid response from URL shortening service');
         }
         
-        // Save to history
+        //Save to history
         saveToHistory(urlToShorten, shortUrl);
         
-        // Send response back
+        //Send response back
         sendResponse({ success: true, shortUrl: shortUrl });
       })
       .catch(error => {
@@ -262,7 +281,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ success: false, error: error.message });
       });
     
-    return true; // Keep message channel open for async response
+    return true; //Keep message channel open for async response
   }
 });
 
