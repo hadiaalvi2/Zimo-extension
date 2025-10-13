@@ -553,9 +553,22 @@ async function loadHistory() {
 function displayHistory(history) {
   historyList.innerHTML = '';
   
-  history.forEach((item) => {
+  history.forEach((item, index) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'history-item-wrapper';
+    
     const card = createHistoryCard(item);
-    historyList.appendChild(card);
+    wrapper.appendChild(card);
+    
+    // Add vertical line between items (except for last item)
+    if (index < history.length - 1) {
+      const line = document.createElement('div');
+      line.className = 'history-line';
+      line.innerHTML = '<img src="assets/Extension+/WS Chrome Line.svg" alt="">';
+      wrapper.appendChild(line);
+    }
+    
+    historyList.appendChild(wrapper);
   });
 }
 
@@ -563,7 +576,6 @@ function displayHistory(history) {
 function createHistoryCard(item) {
   const card = document.createElement('div');
   card.className = 'card';
-  card.style.cursor = 'pointer';
   
   const domain = extractDomain(item.longUrl);
   const date = new Date(item.timestamp);
@@ -584,13 +596,76 @@ function createHistoryCard(item) {
       <span>${timeStr}</span>
       <span>${dateStr}</span>
     </div>
+    <div class="history-actions">
+      <button class="history-action-btn" title="Open in new window" data-action="open" data-url="${item.shortUrl}">
+        <img src="assets/Open in New Window W.svg" alt="Open">
+      </button>
+      <button class="history-action-btn" title="Copy to clipboard" data-action="copy" data-url="${item.shortUrl}">
+        <img src="assets/Share/Copy Icon W.svg" alt="Copy">
+      </button>
+      <button class="history-action-btn" title="Share" data-action="share" data-url="${item.shortUrl}">
+        <img src="assets/Share W.svg" alt="Share">
+      </button>
+      <button class="history-action-btn" title="Delete" data-action="delete" data-url="${item.shortUrl}">
+        <img src="assets/Delete Icon W.svg" alt="Delete">
+      </button>
+      <div class="history-clicks">
+        <img src="assets/Counter - URL Clicks W.svg" alt="Clicks">
+        <span>120</span>
+      </div>
+    </div>
   `;
   
-  card.addEventListener('click', () => {
-    copyToClipboard(item.shortUrl);
+  // Add event listeners to action buttons
+  const actionButtons = card.querySelectorAll('.history-action-btn');
+  actionButtons.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const action = btn.getAttribute('data-action');
+      const url = btn.getAttribute('data-url');
+      
+      if (action === 'copy') {
+        copyToClipboard(url);
+      } else if (action === 'open') {
+        chrome.tabs.create({ url: url });
+      } else if (action === 'share') {
+        // You can implement share functionality here
+        copyToClipboard(url);
+      } else if (action === 'delete') {
+        deleteHistoryItem(item);
+      }
+    });
   });
   
+  // Click on short URL to copy
+  const shortUrlElInCard = card.querySelector('.short-url');
+  if (shortUrlElInCard) {
+    shortUrlElInCard.addEventListener('click', (e) => {
+      e.stopPropagation();
+      copyToClipboard(item.shortUrl);
+    });
+  }
+  
   return card;
+}
+
+// Delete history item
+async function deleteHistoryItem(itemToDelete) {
+  try {
+    const result = await chrome.storage.local.get(['urlHistory']);
+    let history = result.urlHistory || [];
+    
+    history = history.filter(item => 
+      item.shortUrl !== itemToDelete.shortUrl || 
+      item.timestamp !== itemToDelete.timestamp
+    );
+    
+    await chrome.storage.local.set({ urlHistory: history });
+    await loadHistory();
+    
+  } catch (error) {
+    console.error('Error deleting history item:', error);
+  }
 }
 
 // Get random color for logo
