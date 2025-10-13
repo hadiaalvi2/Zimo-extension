@@ -21,6 +21,7 @@ let currentPageTitle = '';
 let currentOriginalUrl = '';
 let currentMetadata = {};
 let isHistoryView = false;
+let metadataCache = {};
 
 // Initialize on load
 document.addEventListener('DOMContentLoaded', init);
@@ -29,11 +30,46 @@ async function init() {
   try {
     updateDateTime();
     setInterval(updateDateTime, 1000);
+    await loadMetadataCache();
     await shortenCurrentTab();
     setupEventListeners();
   } catch (error) {
     console.error('Initialization error:', error);
     showError('Failed to initialize extension');
+  }
+}
+
+// Load metadata cache from storage
+async function loadMetadataCache() {
+  try {
+    const result = await chrome.storage.local.get(['metadataCache']);
+    metadataCache = result.metadataCache || {};
+    console.log('Loaded metadata cache:', Object.keys(metadataCache).length, 'entries');
+  } catch (error) {
+    console.error('Error loading cache:', error);
+  }
+}
+
+// Save metadata to cache
+async function saveMetadataToCache(url, metadata) {
+  try {
+    metadataCache[url] = {
+      ...metadata,
+      cachedAt: Date.now()
+    };
+    
+    // Keep cache size manageable (max 200 entries)
+    const keys = Object.keys(metadataCache);
+    if (keys.length > 200) {
+      const sorted = keys.sort((a, b) => 
+        (metadataCache[a].cachedAt || 0) - (metadataCache[b].cachedAt || 0)
+      );
+      sorted.slice(0, 50).forEach(k => delete metadataCache[k]);
+    }
+    
+    await chrome.storage.local.set({ metadataCache });
+  } catch (error) {
+    console.error('Error saving to cache:', error);
   }
 }
 
@@ -48,15 +84,31 @@ async function getCurrentTab() {
   }
 }
 
-// Fetch COMPLETE page metadata from original URL
-async function fetchPageMetadataFromUrl(url) {
+// Fetch metadata with cache and timeout
+async function fetchPageMetadataFromUrl(url, useCache = true) {
   try {
+    // Check cache first
+    if (useCache && metadataCache[url]) {
+      console.log('Using cached metadata for:', url);
+      return metadataCache[url];
+    }
+
+    console.log('Fetching metadata from:', url);
+    
+    // Set timeout for fetch
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
     const response = await fetch(url, { 
       method: 'GET',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
+      },
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
+    
     if (!response.ok) throw new Error('Failed to fetch URL');
     
     const html = await response.text();
@@ -73,15 +125,13 @@ async function fetchPageMetadataFromUrl(url) {
       return '';
     };
 
-    // Get favicon
+    // Get favicon - optimized
     let favicon = getMetaContent([
       'link[rel="icon"]',
       'link[rel="shortcut icon"]',
-      'link[rel="apple-touch-icon"]',
-      'link[rel="apple-touch-icon-precomposed"]'
+      'link[rel="apple-touch-icon"]'
     ]);
 
-    // Resolve relative favicon URLs to absolute URLs
     if (favicon && !favicon.startsWith('http')) {
       try {
         favicon = new URL(favicon, url).href;
@@ -90,7 +140,6 @@ async function fetchPageMetadataFromUrl(url) {
       }
     }
 
-    // Fallback to standard favicon location if not found
     if (!favicon) {
       favicon = new URL(url).origin + '/favicon.ico';
     }
@@ -119,8 +168,7 @@ async function fetchPageMetadataFromUrl(url) {
     const image = getMetaContent([
       'meta[property="og:image"]',
       'meta[property="og:image:url"]',
-      'meta[name="twitter:image"]',
-      'meta[name="twitter:image:src"]'
+      'meta[name="twitter:image"]'
     ]);
 
     const metadata = {
@@ -131,15 +179,18 @@ async function fetchPageMetadataFromUrl(url) {
       favicon: favicon
     };
 
-    console.log('Fetched metadata:', metadata);
+    // Cache the metadata
+    await saveMetadataToCache(url, metadata);
+    console.log('Fetched and cached metadata:', metadata);
+    
     return metadata;
   } catch (error) {
-    console.error('Error fetching metadata from URL:', error);
+    console.error('Error fetching metadata from URL:', error.message);
     return null;
   }
 }
 
-// Fetch page title using content script (fallback)
+// Fetch page title using content script (faster fallback)
 async function fetchPageTitle(tabId) {
   try {
     const results = await chrome.scripting.executeScript({
@@ -163,10 +214,7 @@ async function fetchPageTitle(tabId) {
       }
     });
 
-    if (results && results[0] && results[0].result) {
-      return results[0].result;
-    }
-    return 'Untitled Page';
+    return results?.[0]?.result || 'Untitled Page';
   } catch (error) {
     console.error('Error fetching page title:', error);
     return 'Untitled Page';
@@ -246,18 +294,15 @@ async function shortenCurrentTab() {
       throw new Error('Could not get current tab URL');
     }
 
-    // Check if URL is valid for shortening
     if (!tab.url.startsWith('http://') && !tab.url.startsWith('https://')) {
       throw new Error('Cannot shorten this type of URL');
     }
 
     currentOriginalUrl = tab.url;
     
-    // Fetch COMPLETE metadata from the ORIGINAL URL
-    console.log('Fetching metadata from ORIGINAL URL:', currentOriginalUrl);
+    // Fetch metadata with timeout
     let metadata = await fetchPageMetadataFromUrl(currentOriginalUrl);
     
-    // Fallback: fetch from content script if URL metadata fails
     if (!metadata || !metadata.title) {
       currentPageTitle = await fetchPageTitle(tab.id);
       currentMetadata = metadata || {};
@@ -271,13 +316,9 @@ async function shortenCurrentTab() {
     // Shorten URL
     currentShortUrl = await shortenUrl(currentOriginalUrl);
     
-    // Extract domain for logo
     const domain = extractDomain(currentOriginalUrl);
-    
-    // Update UI with metadata
     displayResult(currentShortUrl, currentPageTitle, currentOriginalUrl, domain, currentMetadata);
     
-    // Save to history with COMPLETE metadata
     await saveToHistory(currentOriginalUrl, currentShortUrl, currentPageTitle, currentMetadata);
     
   } catch (error) {
@@ -336,7 +377,6 @@ function displayResult(shortUrl, title, originalUrl, domain, metadata) {
   originalUrlEl.textContent = originalUrl;
   originalUrlEl.title = originalUrl;
   
-  // Set logo with favicon if available
   if (metadata && metadata.favicon) {
     displayFaviconLogo(metadata.favicon, domain);
   } else {
@@ -344,11 +384,15 @@ function displayResult(shortUrl, title, originalUrl, domain, metadata) {
   }
 }
 
-// Display favicon logo
+// Display favicon logo with error handling
 function displayFaviconLogo(faviconUrl, domain) {
   const img = new Image();
+  const timeout = setTimeout(() => {
+    displayTextLogo(domain);
+  }, 3000);
   
   img.onload = () => {
+    clearTimeout(timeout);
     sourceLogoEl.innerHTML = '';
     sourceLogoEl.style.background = '#ffffff';
     sourceLogoEl.style.padding = '4px';
@@ -361,14 +405,13 @@ function displayFaviconLogo(faviconUrl, domain) {
     faviconImg.style.width = '100%';
     faviconImg.style.height = '100%';
     faviconImg.style.objectFit = 'contain';
-    faviconImg.onerror = () => {
-      displayTextLogo(domain);
-    };
+    faviconImg.onerror = () => displayTextLogo(domain);
     
     sourceLogoEl.appendChild(faviconImg);
   };
   
   img.onerror = () => {
+    clearTimeout(timeout);
     displayTextLogo(domain);
   };
   
@@ -431,19 +474,16 @@ function shareUrl(platform) {
 
 // Setup event listeners
 function setupEventListeners() {
-  // History icon click
   if (historyIcon) {
     historyIcon.addEventListener('click', toggleHistoryView);
   }
   
-  // Short URL click - copy to clipboard
   if (shortUrlEl) {
     shortUrlEl.addEventListener('click', () => {
       copyToClipboard(currentShortUrl);
     });
   }
   
-  // Share buttons
   document.querySelectorAll('.share-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const action = btn.getAttribute('data-action');
@@ -455,7 +495,6 @@ function setupEventListeners() {
     });
   });
   
-  // Scroll buttons for share actions
   if (scrollLeftBtn) {
     scrollLeftBtn.addEventListener('click', () => {
       shareActions.scrollBy({ left: -150, behavior: 'smooth' });
@@ -470,7 +509,6 @@ function setupEventListeners() {
     });
   }
   
-  // Update scroll button states
   if (shareActions) {
     shareActions.addEventListener('scroll', updateScrollButtons);
     updateScrollButtons();
@@ -487,30 +525,48 @@ function updateScrollButtons() {
   scrollRightBtn.disabled = scrollLeft + clientWidth >= scrollWidth - 1;
 }
 
-// Save to history with COMPLETE metadata
+// Save to history with complete metadata
 async function saveToHistory(longUrl, shortUrl, title, metadata) {
   try {
-    const result = await chrome.storage.local.get(['urlHistory']);
+    const result = await chrome.storage.local.get(['urlHistory', 'urlClickCount']);
     const history = result.urlHistory || [];
+    let clickCount = result.urlClickCount || {};
     
-    history.unshift({
-      longUrl,
-      shortUrl,
-      title,
-      timestamp: new Date().toISOString(),
-      favicon: metadata?.favicon || null,
-      description: metadata?.description || null,
-      siteName: metadata?.siteName || null,
-      image: metadata?.image || null
-    });
+    // Check if short URL already exists
+    const existingIndex = history.findIndex(item => item.shortUrl === shortUrl);
     
-    // Keep only last 50 entries
-    if (history.length > 50) {
-      history.splice(50);
+    if (existingIndex !== -1) {
+      // Update existing entry
+      clickCount[shortUrl] = (clickCount[shortUrl] || 1) + 1;
+      history[existingIndex].clickCount = clickCount[shortUrl];
+      // Move to top
+      const [item] = history.splice(existingIndex, 1);
+      history.unshift(item);
+    } else {
+      // New entry
+      clickCount[shortUrl] = 1;
+      history.unshift({
+        longUrl,
+        shortUrl,
+        title,
+        timestamp: new Date().toISOString(),
+        favicon: metadata?.favicon || null,
+        description: metadata?.description || null,
+        siteName: metadata?.siteName || null,
+        image: metadata?.image || null,
+        clickCount: 1
+      });
     }
     
-    await chrome.storage.local.set({ urlHistory: history });
-    console.log('History saved with metadata:', history[0]);
+    if (history.length > 50) {
+      const removed = history.splice(50);
+      removed.forEach(item => {
+        delete clickCount[item.shortUrl];
+      });
+    }
+    
+    await chrome.storage.local.set({ urlHistory: history, urlClickCount: clickCount });
+    console.log('History saved with metadata');
     
   } catch (error) {
     console.error('Error saving to history:', error);
@@ -569,7 +625,7 @@ async function loadHistory() {
   }
 }
 
-// Display history items
+// Display history items - no extra metadata fetching
 function displayHistory(history) {
   historyList.innerHTML = '';
   
@@ -580,7 +636,6 @@ function displayHistory(history) {
     const card = createHistoryCard(item);
     wrapper.appendChild(card);
     
-    // Add vertical line between items (except for last item)
     if (index < history.length - 1) {
       const line = document.createElement('div');
       line.className = 'history-line';
@@ -592,7 +647,7 @@ function displayHistory(history) {
   });
 }
 
-// Create history card with stored metadata
+// Create history card using existing metadata
 function createHistoryCard(item) {
   const card = document.createElement('div');
   card.className = 'card';
@@ -605,9 +660,8 @@ function createHistoryCard(item) {
   
   const logoId = `history-logo-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   const initialColor = getRandomColor();
-  
-  // Use stored title or fetch new one
   const displayTitle = item.title || 'Untitled Page';
+  const clickCount = item.clickCount || 1;
   
   card.innerHTML = `
     <div class="source-header">
@@ -637,29 +691,19 @@ function createHistoryCard(item) {
       </button>
       <div class="history-clicks">
         <img src="assets/Counter - URL Clicks W.svg" alt="Clicks">
-        <span>120</span>
+        <span>${clickCount}</span>
       </div>
     </div>
   `;
   
-  // Use cached favicon if available
+  // Load favicon asynchronously with timeout
   if (item.favicon) {
-    console.log('Using cached favicon for:', item.longUrl);
-    updateHistoryLogo(logoId, item.favicon, domain, initialColor);
-  } else {
-    // Fetch metadata from ORIGINAL URL if not cached
-    console.log('Fetching metadata for history item:', item.longUrl);
-    fetchPageMetadataFromUrl(item.longUrl).then(metadata => {
-      if (metadata && metadata.favicon) {
-        console.log('Got favicon:', metadata.favicon);
-        updateHistoryLogo(logoId, metadata.favicon, domain, initialColor);
-        // Update cache with complete metadata
-        updateHistoryItemWithMetadata(item, metadata);
-      }
-    });
+    setTimeout(() => {
+      displayHistoryFavicon(logoId, item.favicon, domain, initialColor);
+    }, 100);
   }
   
-  // Add event listeners to action buttons
+  // Add event listeners
   const actionButtons = card.querySelectorAll('.history-action-btn');
   actionButtons.forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -679,7 +723,6 @@ function createHistoryCard(item) {
     });
   });
   
-  // Click on short URL to copy
   const shortUrlElInCard = card.querySelector('.short-url');
   if (shortUrlElInCard) {
     shortUrlElInCard.addEventListener('click', (e) => {
@@ -691,14 +734,18 @@ function createHistoryCard(item) {
   return card;
 }
 
-// Update history logo with favicon
-function updateHistoryLogo(logoId, faviconUrl, domain, fallbackColor) {
+// Display favicon for history items with timeout
+function displayHistoryFavicon(logoId, faviconUrl, domain, fallbackColor) {
   const logoEl = document.getElementById(logoId);
   if (!logoEl) return;
   
   const img = new Image();
+  const timeout = setTimeout(() => {
+    // Keep text logo as fallback
+  }, 2000);
   
   img.onload = () => {
+    clearTimeout(timeout);
     logoEl.innerHTML = '';
     logoEl.style.background = '#ffffff';
     logoEl.style.padding = '4px';
@@ -712,63 +759,38 @@ function updateHistoryLogo(logoId, faviconUrl, domain, fallbackColor) {
     faviconImg.style.height = '100%';
     faviconImg.style.objectFit = 'contain';
     faviconImg.onerror = () => {
-      // Fallback to text logo if favicon fails
-      logoEl.innerHTML = domain;
-      logoEl.style.background = fallbackColor;
-      logoEl.style.padding = '0';
+      // Keep original styling
     };
     
     logoEl.appendChild(faviconImg);
   };
   
   img.onerror = () => {
-    // Keep text logo if favicon fails to load
-    console.log('Favicon failed to load:', faviconUrl);
+    clearTimeout(timeout);
+    // Keep fallback styling
   };
   
   img.src = faviconUrl;
 }
 
-// Update history item with complete metadata in storage
-async function updateHistoryItemWithMetadata(item, metadata) {
-  try {
-    const result = await chrome.storage.local.get(['urlHistory']);
-    let history = result.urlHistory || [];
-    
-    // Find and update the item
-    const index = history.findIndex(h => 
-      h.shortUrl === item.shortUrl && h.timestamp === item.timestamp
-    );
-    
-    if (index !== -1) {
-      history[index].favicon = metadata.favicon;
-      history[index].description = metadata.description;
-      history[index].siteName = metadata.siteName;
-      history[index].image = metadata.image;
-      // Update title if it was missing
-      if (!history[index].title || history[index].title === 'Untitled Page') {
-        history[index].title = metadata.title;
-      }
-      await chrome.storage.local.set({ urlHistory: history });
-      console.log('Updated history item with metadata');
-    }
-  } catch (error) {
-    console.error('Error updating history item with metadata:', error);
-  }
-}
-
 // Delete history item
 async function deleteHistoryItem(itemToDelete) {
   try {
-    const result = await chrome.storage.local.get(['urlHistory']);
+    const result = await chrome.storage.local.get(['urlHistory', 'urlClickCount']);
     let history = result.urlHistory || [];
+    let clickCount = result.urlClickCount || {};
     
     history = history.filter(item => 
       item.shortUrl !== itemToDelete.shortUrl || 
       item.timestamp !== itemToDelete.timestamp
     );
     
-    await chrome.storage.local.set({ urlHistory: history });
+    // Clean up click count if no more items with this short URL
+    if (!history.some(item => item.shortUrl === itemToDelete.shortUrl)) {
+      delete clickCount[itemToDelete.shortUrl];
+    }
+    
+    await chrome.storage.local.set({ urlHistory: history, urlClickCount: clickCount });
     await loadHistory();
     
   } catch (error) {

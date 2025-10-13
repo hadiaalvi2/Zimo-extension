@@ -131,3 +131,63 @@ async function fetchPageMetadataFromUrl(url) {
     console.error('Error fetching metadata from URL:', error);
     return null;
   }
+}
+
+// Track short URL clicks
+async function trackShortUrlClick(shortUrl) {
+  try {
+    const result = await chrome.storage.local.get(['urlHistory', 'urlClickCount']);
+    const history = result.urlHistory || [];
+    let clickCount = result.urlClickCount || {};
+
+    // Increment click count
+    clickCount[shortUrl] = (clickCount[shortUrl] || 1) + 1;
+
+    // Update history items with this short URL
+    history.forEach(item => {
+      if (item.shortUrl === shortUrl) {
+        item.clickCount = clickCount[shortUrl];
+      }
+    });
+
+    // Move the item to top
+    const itemIndex = history.findIndex(item => item.shortUrl === shortUrl);
+    if (itemIndex > 0) {
+      const [item] = history.splice(itemIndex, 1);
+      history.unshift(item);
+    }
+
+    await chrome.storage.local.set({ urlHistory: history, urlClickCount: clickCount });
+    console.log(`Click tracked for ${shortUrl}: ${clickCount[shortUrl]}`);
+  } catch (error) {
+    console.error('Error tracking click:', error);
+  }
+}
+
+// Listen for tab updates to track when short URLs are opened
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'loading' && tab.url) {
+    // Check if it's one of our shortened URLs
+    const knownShorteners = ['is.gd', 'v.gd', 'tinyurl.com'];
+    const isShortUrl = knownShorteners.some(shortener => tab.url.includes(shortener));
+    
+    if (isShortUrl) {
+      // Extract the short URL
+      const shortUrl = tab.url.split('?')[0]; // Remove query params if any
+      trackShortUrlClick(shortUrl);
+    }
+  }
+});
+
+// Handle context menu clicks for sharing
+chrome.contextMenus.create({
+  id: 'shorten-url',
+  title: 'Shorten this link',
+  contexts: ['link']
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'shorten-url') {
+    console.log('Context menu shorten:', info.linkUrl);
+  }
+});
