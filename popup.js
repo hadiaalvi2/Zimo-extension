@@ -26,37 +26,110 @@ let isHistoryView = false;
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
-  // Check if all required elements exist
-  if (!timeDisplay || !dateDisplay) {
-    console.error('Required DOM elements not found');
-    return;
+  try {
+    updateDateTime();
+    setInterval(updateDateTime, 1000);
+    await shortenCurrentTab();
+    setupEventListeners();
+  } catch (error) {
+    console.error('Initialization error:', error);
+    showError('Failed to initialize extension');
   }
-  
-  updateDateTime();
-  setInterval(updateDateTime, 1000);
-  await shortenCurrentTab();
-  setupEventListeners();
 }
 
 // Get current tab info
 async function getCurrentTab() {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    return tab;
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tabs[0] || null;
   } catch (error) {
     console.error('Error getting tab:', error);
     return null;
   }
 }
 
-// Fetch comprehensive page metadata using content script
-async function fetchPageMetadata(tabId, url) {
+// Fetch page metadata from original URL
+async function fetchPageMetadataFromUrl(url) {
   try {
-    // Inject script to extract metadata from the actual page
+    const response = await fetch(url, { method: 'GET' });
+    if (!response.ok) throw new Error('Failed to fetch URL');
+    
+    const html = await response.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    
+    const getMetaContent = (selectors) => {
+      for (const selector of selectors) {
+        const element = doc.querySelector(selector);
+        if (element) {
+          return element.content || element.textContent || element.href;
+        }
+      }
+      return '';
+    };
+
+    let favicon = getMetaContent([
+      'link[rel="icon"]',
+      'link[rel="shortcut icon"]',
+      'link[rel="apple-touch-icon"]',
+      'link[rel="apple-touch-icon-precomposed"]'
+    ]);
+
+    // Resolve relative favicon URLs to absolute URLs
+    if (favicon && !favicon.startsWith('http')) {
+      try {
+        favicon = new URL(favicon, url).href;
+      } catch (e) {
+        favicon = new URL(url).origin + (favicon.startsWith('/') ? favicon : '/' + favicon);
+      }
+    }
+
+    // Fallback to standard favicon location if not found
+    if (!favicon) {
+      favicon = new URL(url).origin + '/favicon.ico';
+    }
+
+    const metadata = {
+      title: getMetaContent([
+        'meta[property="og:title"]',
+        'meta[name="twitter:title"]',
+        'meta[name="title"]'
+      ]) || doc.querySelector('title')?.textContent || 'Untitled Page',
+      
+      description: getMetaContent([
+        'meta[property="og:description"]',
+        'meta[name="twitter:description"]',
+        'meta[name="description"]'
+      ]),
+      
+      siteName: getMetaContent([
+        'meta[property="og:site_name"]',
+        'meta[name="application-name"]'
+      ]),
+      
+      image: getMetaContent([
+        'meta[property="og:image"]',
+        'meta[property="og:image:url"]',
+        'meta[name="twitter:image"]',
+        'meta[name="twitter:image:src"]'
+      ]),
+      
+      favicon: favicon
+    };
+
+    return metadata;
+  } catch (error) {
+    console.error('Error fetching metadata from URL:', error);
+    return null;
+  }
+}
+
+// Fetch page title using content script (fallback)
+async function fetchPageTitle(tabId) {
+  try {
     const results = await chrome.scripting.executeScript({
       target: { tabId: tabId },
       func: () => {
-        // Extract metadata from the current page
         const getMetaContent = (selectors) => {
           for (const selector of selectors) {
             const element = document.querySelector(selector);
@@ -67,151 +140,21 @@ async function fetchPageMetadata(tabId, url) {
           return '';
         };
 
-        const metadata = {
-          // Title - try multiple sources
-          title: getMetaContent([
-            'meta[property="og:title"]',
-            'meta[name="twitter:title"]',
-            'meta[name="title"]',
-            'title'
-          ]) || document.title || 'Untitled Page',
-          
-          // Description
-          description: getMetaContent([
-            'meta[property="og:description"]',
-            'meta[name="twitter:description"]',
-            'meta[name="description"]'
-          ]),
-          
-          // Site name
-          siteName: getMetaContent([
-            'meta[property="og:site_name"]',
-            'meta[name="application-name"]'
-          ]),
-          
-          // Favicon - try multiple sources
-          favicon: getMetaContent([
-            'link[rel="icon"]',
-            'link[rel="shortcut icon"]',
-            'link[rel="apple-touch-icon"]',
-            'link[rel="apple-touch-icon-precomposed"]'
-          ]),
-          
-          // Image
-          image: getMetaContent([
-            'meta[property="og:image"]',
-            'meta[property="og:image:url"]',
-            'meta[name="twitter:image"]',
-            'meta[name="twitter:image:src"]'
-          ]),
-          
-          // Type
-          type: getMetaContent(['meta[property="og:type"]']) || 'website',
-          
-          // Author
-          author: getMetaContent([
-            'meta[name="author"]',
-            'meta[property="article:author"]'
-          ]),
-          
-          // Keywords
-          keywords: getMetaContent(['meta[name="keywords"]']),
-          
-          // Published time
-          publishedTime: getMetaContent([
-            'meta[property="article:published_time"]',
-            'meta[name="date"]',
-            'meta[name="publish_date"]'
-          ]),
-          
-          // Canonical URL
-          canonical: getMetaContent(['link[rel="canonical"]']),
-          
-          // Language
-          language: document.documentElement.lang || 
-                    getMetaContent(['meta[http-equiv="content-language"]']) ||
-                    'en',
-          
-          // Theme color
-          themeColor: getMetaContent(['meta[name="theme-color"]'])
-        };
-
-        // Clean up the metadata
-        Object.keys(metadata).forEach(key => {
-          if (typeof metadata[key] === 'string') {
-            metadata[key] = metadata[key].trim();
-          }
-        });
-
-        return metadata;
+        return getMetaContent([
+          'meta[property="og:title"]',
+          'meta[name="twitter:title"]',
+          'meta[name="title"]'
+        ]) || document.title || 'Untitled Page';
       }
     });
 
     if (results && results[0] && results[0].result) {
-      const metadata = results[0].result;
-      
-      // Resolve relative favicon URLs
-      if (metadata.favicon && !metadata.favicon.startsWith('http')) {
-        try {
-          metadata.favicon = new URL(metadata.favicon, url).href;
-        } catch (e) {
-          metadata.favicon = `${new URL(url).origin}/favicon.ico`;
-        }
-      }
-      
-      // Add site name fallback
-      if (!metadata.siteName) {
-        metadata.siteName = extractSiteName(url);
-      }
-      
-      // Add canonical URL fallback
-      if (!metadata.canonical) {
-        metadata.canonical = url;
-      }
-      
-      // Add favicon fallback
-      if (!metadata.favicon) {
-        metadata.favicon = `${new URL(url).origin}/favicon.ico`;
-      }
-      
-      return metadata;
+      return results[0].result;
     }
-    
-    throw new Error('Could not extract metadata');
-    
+    return 'Untitled Page';
   } catch (error) {
-    console.error('Error fetching metadata:', error);
-    // Return fallback metadata
-    return {
-      title: 'Page Title',
-      description: '',
-      siteName: extractSiteName(url),
-      favicon: `${new URL(url).origin}/favicon.ico`,
-      image: '',
-      type: 'website',
-      author: '',
-      keywords: '',
-      publishedTime: '',
-      canonical: url,
-      language: 'en',
-      themeColor: ''
-    };
-  }
-}
-
-// Extract site name from URL
-function extractSiteName(url) {
-  try {
-    const urlObj = new URL(url);
-    const hostname = urlObj.hostname.replace('www.', '');
-    const parts = hostname.split('.');
-    
-    if (parts.length > 1) {
-      return parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
-    }
-    return hostname;
-  } catch (error) {
-    return 'Website';
+    console.error('Error fetching page title:', error);
+    return 'Untitled Page';
   }
 }
 
@@ -222,7 +165,6 @@ function extractDomain(url) {
     const hostname = urlObj.hostname.replace('www.', '');
     const parts = hostname.split('.');
     
-    // Get main domain name
     if (parts.length > 2) {
       return parts[parts.length - 2].toUpperCase().substring(0, 3);
     } else if (parts.length >= 1) {
@@ -234,59 +176,46 @@ function extractDomain(url) {
   }
 }
 
-// Get favicon URL with fallbacks
-function getFaviconUrl(url, metadata) {
-  if (metadata && metadata.favicon) {
-    return metadata.favicon;
-  }
-  
-  try {
-    const urlObj = new URL(url);
-    return `${urlObj.origin}/favicon.ico`;
-  } catch (error) {
-    return null;
-  }
-}
-
 // Shorten URL using multiple services
 async function shortenUrl(url) {
-  // Try is.gd first (direct redirect, no preview page)
-  try {
-    const response = await fetch(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(url)}`);
-    if (response.ok) {
-      const shortUrl = await response.text();
-      if (shortUrl && !shortUrl.includes('Error') && shortUrl.startsWith('http')) {
-        return shortUrl;
-      }
+  const services = [
+    {
+      name: 'is.gd',
+      url: `https://is.gd/create.php?format=simple&url=${encodeURIComponent(url)}`,
+      method: 'GET'
+    },
+    {
+      name: 'v.gd',
+      url: `https://v.gd/create.php?format=simple&url=${encodeURIComponent(url)}`,
+      method: 'GET'
+    },
+    {
+      name: 'TinyURL',
+      url: `https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`,
+      method: 'GET'
     }
-  } catch (error) {
-    console.error('is.gd failed:', error);
-  }
+  ];
 
-  // Try v.gd as fallback (direct redirect, no preview page)
-  try {
-    const response = await fetch(`https://v.gd/create.php?format=simple&url=${encodeURIComponent(url)}`);
-    if (response.ok) {
-      const shortUrl = await response.text();
-      if (shortUrl && !shortUrl.includes('Error') && shortUrl.startsWith('http')) {
-        return shortUrl;
-      }
-    }
-  } catch (error) {
-    console.error('v.gd failed:', error);
-  }
+  for (const service of services) {
+    try {
+      console.log(`Trying ${service.name}...`);
+      const response = await fetch(service.url, {
+        method: service.method,
+        headers: {
+          'Accept': 'text/plain'
+        }
+      });
 
-  // Try TinyURL as last resort
-  try {
-    const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`);
-    if (response.ok) {
-      const shortUrl = await response.text();
-      if (shortUrl && !shortUrl.includes('Error') && shortUrl.startsWith('http')) {
-        return shortUrl;
+      if (response.ok) {
+        const shortUrl = await response.text();
+        if (shortUrl && !shortUrl.includes('Error') && shortUrl.startsWith('http')) {
+          console.log(`✓ ${service.name} success:`, shortUrl);
+          return shortUrl.trim();
+        }
       }
+    } catch (error) {
+      console.error(`${service.name} failed:`, error);
     }
-  } catch (error) {
-    console.error('TinyURL failed:', error);
   }
 
   throw new Error('All URL shortening services failed. Please try again later.');
@@ -309,11 +238,17 @@ async function shortenCurrentTab() {
 
     currentOriginalUrl = tab.url;
     
-    // Fetch comprehensive metadata using content script
-    currentMetadata = await fetchPageMetadata(tab.id, currentOriginalUrl);
+    // Try to fetch metadata from the original URL
+    let metadata = await fetchPageMetadataFromUrl(currentOriginalUrl);
     
-    // Use metadata title or fall back to tab title
-    currentPageTitle = currentMetadata.title || tab.title || 'Untitled Page';
+    // Fallback: fetch from content script if URL metadata fails
+    if (!metadata || !metadata.title) {
+      currentPageTitle = await fetchPageTitle(tab.id);
+      currentMetadata = metadata || {};
+    } else {
+      currentPageTitle = metadata.title || tab.title || 'Untitled Page';
+      currentMetadata = metadata;
+    }
     
     // Shorten URL
     currentShortUrl = await shortenUrl(currentOriginalUrl);
@@ -321,18 +256,15 @@ async function shortenCurrentTab() {
     // Extract domain for logo
     const domain = extractDomain(currentOriginalUrl);
     
-    // Update UI with all metadata
+    // Update UI with metadata
     displayResult(currentShortUrl, currentPageTitle, currentOriginalUrl, domain, currentMetadata);
     
-    // Log metadata for debugging
-    console.log('Fetched Metadata:', currentMetadata);
-    
     // Save to history
-    await saveToHistory(currentOriginalUrl, currentShortUrl, currentPageTitle, currentMetadata);
+    await saveToHistory(currentOriginalUrl, currentShortUrl, currentPageTitle);
     
   } catch (error) {
     console.error('Error:', error);
-    showError(error.message);
+    showError(error.message || 'Failed to shorten URL');
   }
 }
 
@@ -340,12 +272,10 @@ async function shortenCurrentTab() {
 function updateDateTime() {
   const now = new Date();
   
-  // Time (HH:MM)
   const hours = String(now.getHours()).padStart(2, '0');
   const minutes = String(now.getMinutes()).padStart(2, '0');
   timeDisplay.textContent = `${hours}:${minutes}`;
   
-  // Date (DD Month YYYY)
   const day = String(now.getDate()).padStart(2, '0');
   const months = ['January', 'February', 'March', 'April', 'May', 'June', 
                   'July', 'August', 'September', 'October', 'November', 'December'];
@@ -373,7 +303,7 @@ function showError(message) {
   shareContainer.style.display = 'none';
 }
 
-// Display result with metadata
+// Display result
 function displayResult(shortUrl, title, originalUrl, domain, metadata) {
   loadingState.style.display = 'none';
   errorState.style.display = 'none';
@@ -384,42 +314,49 @@ function displayResult(shortUrl, title, originalUrl, domain, metadata) {
   
   shortUrlEl.textContent = shortUrl;
   pageTitleEl.textContent = title;
-  pageTitleEl.title = title; // Full title on hover
+  pageTitleEl.title = title;
   originalUrlEl.textContent = originalUrl;
-  originalUrlEl.title = originalUrl; // Full URL on hover
+  originalUrlEl.title = originalUrl;
   
-  // Try to use favicon as logo
-  const faviconUrl = getFaviconUrl(originalUrl, metadata);
-  
-  if (faviconUrl) {
-    // Try to load favicon
-    const img = new Image();
-    img.onload = function() {
-      // Successfully loaded favicon
-      sourceLogoEl.innerHTML = '';
-      sourceLogoEl.style.background = '#ffffff';
-      sourceLogoEl.style.padding = '4px';
-      const faviconImg = document.createElement('img');
-      faviconImg.src = faviconUrl;
-      faviconImg.style.width = '100%';
-      faviconImg.style.height = '100%';
-      faviconImg.style.objectFit = 'contain';
-      sourceLogoEl.appendChild(faviconImg);
-    };
-    img.onerror = function() {
-      // Fallback to text if favicon fails
-      displayTextLogo(domain);
-    };
-    img.src = faviconUrl;
+  // Set logo with favicon if available
+  if (metadata && metadata.favicon) {
+    displayFaviconLogo(metadata.favicon, domain);
   } else {
-    // No favicon, use text
     displayTextLogo(domain);
   }
+}
+
+// Display favicon logo
+function displayFaviconLogo(faviconUrl, domain) {
+  const img = new Image();
   
-  // Add description as tooltip if available
-  if (metadata.description) {
-    pageTitleEl.title = `${title}\n\n${metadata.description}`;
-  }
+  img.onload = () => {
+    sourceLogoEl.innerHTML = '';
+    sourceLogoEl.style.background = '#ffffff';
+    sourceLogoEl.style.padding = '4px';
+    sourceLogoEl.style.display = 'flex';
+    sourceLogoEl.style.alignItems = 'center';
+    sourceLogoEl.style.justifyContent = 'center';
+    
+    const faviconImg = document.createElement('img');
+    faviconImg.src = faviconUrl;
+    faviconImg.style.width = '100%';
+    faviconImg.style.height = '100%';
+    faviconImg.style.objectFit = 'contain';
+    faviconImg.onerror = () => {
+      // Fallback to text logo if favicon fails to load
+      displayTextLogo(domain);
+    };
+    
+    sourceLogoEl.appendChild(faviconImg);
+  };
+  
+  img.onerror = () => {
+    // Fallback to text logo if favicon fails
+    displayTextLogo(domain);
+  };
+  
+  img.src = faviconUrl;
 }
 
 // Display text-based logo
@@ -458,7 +395,6 @@ function showCopyFeedback() {
 function shareUrl(platform) {
   const url = encodeURIComponent(currentShortUrl);
   const text = encodeURIComponent(currentPageTitle);
-  const description = currentMetadata.description ? encodeURIComponent(currentMetadata.description) : text;
   
   const shareUrls = {
     whatsapp: `https://wa.me/?text=${text}%20${url}`,
@@ -480,12 +416,16 @@ function shareUrl(platform) {
 // Setup event listeners
 function setupEventListeners() {
   // History icon click
-  historyIcon.addEventListener('click', toggleHistoryView);
+  if (historyIcon) {
+    historyIcon.addEventListener('click', toggleHistoryView);
+  }
   
   // Short URL click - copy to clipboard
-  shortUrlEl.addEventListener('click', () => {
-    copyToClipboard(currentShortUrl);
-  });
+  if (shortUrlEl) {
+    shortUrlEl.addEventListener('click', () => {
+      copyToClipboard(currentShortUrl);
+    });
+  }
   
   // Share buttons
   document.querySelectorAll('.share-btn').forEach(btn => {
@@ -500,23 +440,31 @@ function setupEventListeners() {
   });
   
   // Scroll buttons for share actions
-  scrollLeftBtn.addEventListener('click', () => {
-    shareActions.scrollBy({ left: -150, behavior: 'smooth' });
-    setTimeout(updateScrollButtons, 300);
-  });
+  if (scrollLeftBtn) {
+    scrollLeftBtn.addEventListener('click', () => {
+      shareActions.scrollBy({ left: -150, behavior: 'smooth' });
+      setTimeout(updateScrollButtons, 300);
+    });
+  }
   
-  scrollRightBtn.addEventListener('click', () => {
-    shareActions.scrollBy({ left: 150, behavior: 'smooth' });
-    setTimeout(updateScrollButtons, 300);
-  });
+  if (scrollRightBtn) {
+    scrollRightBtn.addEventListener('click', () => {
+      shareActions.scrollBy({ left: 150, behavior: 'smooth' });
+      setTimeout(updateScrollButtons, 300);
+    });
+  }
   
   // Update scroll button states
-  shareActions.addEventListener('scroll', updateScrollButtons);
-  updateScrollButtons();
+  if (shareActions) {
+    shareActions.addEventListener('scroll', updateScrollButtons);
+    updateScrollButtons();
+  }
 }
 
 // Update scroll button states
 function updateScrollButtons() {
+  if (!shareActions || !scrollLeftBtn || !scrollRightBtn) return;
+  
   const { scrollLeft, scrollWidth, clientWidth } = shareActions;
   
   scrollLeftBtn.disabled = scrollLeft <= 0;
@@ -524,24 +472,15 @@ function updateScrollButtons() {
 }
 
 // Save to history
-async function saveToHistory(longUrl, shortUrl, title, metadata) {
+async function saveToHistory(longUrl, shortUrl, title) {
   try {
-    // Check if chrome.storage is available
-    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
-      console.error('Chrome storage API not available');
-      return;
-    }
-    
-    // Get existing history
     const result = await chrome.storage.local.get(['urlHistory']);
     const history = result.urlHistory || [];
     
-    // Add new entry at the beginning
     history.unshift({
       longUrl,
       shortUrl,
       title,
-      metadata,
       timestamp: new Date().toISOString()
     });
     
@@ -550,9 +489,8 @@ async function saveToHistory(longUrl, shortUrl, title, metadata) {
       history.splice(50);
     }
     
-    // Save updated history
     await chrome.storage.local.set({ urlHistory: history });
-    console.log('History saved successfully:', history.length, 'items');
+    console.log('History saved:', history.length, 'items');
     
   } catch (error) {
     console.error('Error saving to history:', error);
@@ -591,15 +529,6 @@ function showMainView() {
 // Load and display history
 async function loadHistory() {
   try {
-    // Check if chrome.storage is available
-    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
-      console.error('Chrome storage API not available');
-      historyList.innerHTML = '';
-      emptyHistory.style.display = 'block';
-      return;
-    }
-    
-    // Get history from storage
     const result = await chrome.storage.local.get(['urlHistory']);
     const history = result.urlHistory || [];
     
@@ -624,25 +553,23 @@ async function loadHistory() {
 function displayHistory(history) {
   historyList.innerHTML = '';
   
-  history.forEach((item, index) => {
-    const card = createHistoryCard(item, index);
+  history.forEach((item) => {
+    const card = createHistoryCard(item);
     historyList.appendChild(card);
   });
 }
 
 // Create history card
-function createHistoryCard(item, index) {
+function createHistoryCard(item) {
   const card = document.createElement('div');
   card.className = 'card';
   card.style.cursor = 'pointer';
   
-  // Extract domain for logo
   const domain = extractDomain(item.longUrl);
-  
-  // Format timestamp
   const date = new Date(item.timestamp);
   const timeStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-  const dateStr = `${String(date.getDate()).padStart(2, '0')} ${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][date.getMonth()]} ${date.getFullYear()}`;
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const dateStr = `${String(date.getDate()).padStart(2, '0')} ${months[date.getMonth()]} ${date.getFullYear()}`;
   
   card.innerHTML = `
     <div class="source-header">
@@ -659,11 +586,8 @@ function createHistoryCard(item, index) {
     </div>
   `;
   
-  // Click to copy
-  card.addEventListener('click', (e) => {
-    if (!e.target.closest('.share-btn')) {
-      copyToClipboard(item.shortUrl);
-    }
+  card.addEventListener('click', () => {
+    copyToClipboard(item.shortUrl);
   });
   
   return card;

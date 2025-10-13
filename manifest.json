@@ -11,6 +11,17 @@
     "contextMenus"
   ],
   "host_permissions": [
+    "https://is.gd/*",
+    "https://v.gd/*",
+    "https://tinyurl.com/*",
+    "https://wa.me/*",
+    "https://t.me/*",
+    "https://www.facebook.com/*",
+    "https://twitter.com/*",
+    "https://reddit.com/*",
+    "https://discord.com/*",
+    "https://bsky.app/*",
+    "https://www.threads.net/*",
     "<all_urls>"
   ],
   "background": {
@@ -18,15 +29,15 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_icon": {
-      "16": "assets/Shapes/W.svg",
-      "48": "assets/Shapes/W.svg",
-      "128": "assets/Shapes/W.svg"
-    }
+    "default_title": "URL Shortener"
   },
-  "icons": {
-    "16": "assets/Shapes/W.svg",
-    "48": "assets/Shapes/W.svg",
-    "128": "assets/Shapes/W.svg"
+  "commands": {
+    "open-popup": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+U",
+        "mac": "Command+Shift+U"
+      },
+      "description": "Open URL Shortener popup"
+    }
   }
 }
