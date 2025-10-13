@@ -48,10 +48,15 @@ async function getCurrentTab() {
   }
 }
 
-// Fetch page metadata from original URL
+// Fetch COMPLETE page metadata from original URL
 async function fetchPageMetadataFromUrl(url) {
   try {
-    const response = await fetch(url, { method: 'GET' });
+    const response = await fetch(url, { 
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
     if (!response.ok) throw new Error('Failed to fetch URL');
     
     const html = await response.text();
@@ -68,6 +73,7 @@ async function fetchPageMetadataFromUrl(url) {
       return '';
     };
 
+    // Get favicon
     let favicon = getMetaContent([
       'link[rel="icon"]',
       'link[rel="shortcut icon"]',
@@ -89,34 +95,43 @@ async function fetchPageMetadataFromUrl(url) {
       favicon = new URL(url).origin + '/favicon.ico';
     }
 
+    // Get title
+    const title = getMetaContent([
+      'meta[property="og:title"]',
+      'meta[name="twitter:title"]',
+      'meta[name="title"]'
+    ]) || doc.querySelector('title')?.textContent || 'Untitled Page';
+
+    // Get description
+    const description = getMetaContent([
+      'meta[property="og:description"]',
+      'meta[name="twitter:description"]',
+      'meta[name="description"]'
+    ]);
+
+    // Get site name
+    const siteName = getMetaContent([
+      'meta[property="og:site_name"]',
+      'meta[name="application-name"]'
+    ]);
+
+    // Get image
+    const image = getMetaContent([
+      'meta[property="og:image"]',
+      'meta[property="og:image:url"]',
+      'meta[name="twitter:image"]',
+      'meta[name="twitter:image:src"]'
+    ]);
+
     const metadata = {
-      title: getMetaContent([
-        'meta[property="og:title"]',
-        'meta[name="twitter:title"]',
-        'meta[name="title"]'
-      ]) || doc.querySelector('title')?.textContent || 'Untitled Page',
-      
-      description: getMetaContent([
-        'meta[property="og:description"]',
-        'meta[name="twitter:description"]',
-        'meta[name="description"]'
-      ]),
-      
-      siteName: getMetaContent([
-        'meta[property="og:site_name"]',
-        'meta[name="application-name"]'
-      ]),
-      
-      image: getMetaContent([
-        'meta[property="og:image"]',
-        'meta[property="og:image:url"]',
-        'meta[name="twitter:image"]',
-        'meta[name="twitter:image:src"]'
-      ]),
-      
+      title: title.trim(),
+      description: description?.trim() || '',
+      siteName: siteName?.trim() || '',
+      image: image || '',
       favicon: favicon
     };
 
+    console.log('Fetched metadata:', metadata);
     return metadata;
   } catch (error) {
     console.error('Error fetching metadata from URL:', error);
@@ -238,7 +253,8 @@ async function shortenCurrentTab() {
 
     currentOriginalUrl = tab.url;
     
-    // Try to fetch metadata from the original URL
+    // Fetch COMPLETE metadata from the ORIGINAL URL
+    console.log('Fetching metadata from ORIGINAL URL:', currentOriginalUrl);
     let metadata = await fetchPageMetadataFromUrl(currentOriginalUrl);
     
     // Fallback: fetch from content script if URL metadata fails
@@ -250,6 +266,8 @@ async function shortenCurrentTab() {
       currentMetadata = metadata;
     }
     
+    console.log('Using metadata:', currentMetadata);
+    
     // Shorten URL
     currentShortUrl = await shortenUrl(currentOriginalUrl);
     
@@ -259,8 +277,8 @@ async function shortenCurrentTab() {
     // Update UI with metadata
     displayResult(currentShortUrl, currentPageTitle, currentOriginalUrl, domain, currentMetadata);
     
-    // Save to history
-    await saveToHistory(currentOriginalUrl, currentShortUrl, currentPageTitle);
+    // Save to history with COMPLETE metadata
+    await saveToHistory(currentOriginalUrl, currentShortUrl, currentPageTitle, currentMetadata);
     
   } catch (error) {
     console.error('Error:', error);
@@ -344,7 +362,6 @@ function displayFaviconLogo(faviconUrl, domain) {
     faviconImg.style.height = '100%';
     faviconImg.style.objectFit = 'contain';
     faviconImg.onerror = () => {
-      // Fallback to text logo if favicon fails to load
       displayTextLogo(domain);
     };
     
@@ -352,7 +369,6 @@ function displayFaviconLogo(faviconUrl, domain) {
   };
   
   img.onerror = () => {
-    // Fallback to text logo if favicon fails
     displayTextLogo(domain);
   };
   
@@ -471,8 +487,8 @@ function updateScrollButtons() {
   scrollRightBtn.disabled = scrollLeft + clientWidth >= scrollWidth - 1;
 }
 
-// Save to history
-async function saveToHistory(longUrl, shortUrl, title) {
+// Save to history with COMPLETE metadata
+async function saveToHistory(longUrl, shortUrl, title, metadata) {
   try {
     const result = await chrome.storage.local.get(['urlHistory']);
     const history = result.urlHistory || [];
@@ -481,7 +497,11 @@ async function saveToHistory(longUrl, shortUrl, title) {
       longUrl,
       shortUrl,
       title,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      favicon: metadata?.favicon || null,
+      description: metadata?.description || null,
+      siteName: metadata?.siteName || null,
+      image: metadata?.image || null
     });
     
     // Keep only last 50 entries
@@ -490,7 +510,7 @@ async function saveToHistory(longUrl, shortUrl, title) {
     }
     
     await chrome.storage.local.set({ urlHistory: history });
-    console.log('History saved:', history.length, 'items');
+    console.log('History saved with metadata:', history[0]);
     
   } catch (error) {
     console.error('Error saving to history:', error);
@@ -572,7 +592,7 @@ function displayHistory(history) {
   });
 }
 
-// Create history card
+// Create history card with stored metadata
 function createHistoryCard(item) {
   const card = document.createElement('div');
   card.className = 'card';
@@ -583,14 +603,20 @@ function createHistoryCard(item) {
   const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const dateStr = `${String(date.getDate()).padStart(2, '0')} ${months[date.getMonth()]} ${date.getFullYear()}`;
   
+  const logoId = `history-logo-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const initialColor = getRandomColor();
+  
+  // Use stored title or fetch new one
+  const displayTitle = item.title || 'Untitled Page';
+  
   card.innerHTML = `
     <div class="source-header">
-      <div class="source-logo" style="background: ${getRandomColor()}">${domain}</div>
+      <div class="source-logo" id="${logoId}" style="background: ${initialColor}">${domain}</div>
       <div class="source-info">
         <div class="short-url" title="Click to copy">${item.shortUrl}</div>
       </div>
     </div>
-    <div class="page-title">${item.title || 'Untitled Page'}</div>
+    <div class="page-title">${displayTitle}</div>
     <div class="original-url" title="${item.longUrl}">${item.longUrl}</div>
     <div class="timestamp">
       <span>${timeStr}</span>
@@ -616,6 +642,23 @@ function createHistoryCard(item) {
     </div>
   `;
   
+  // Use cached favicon if available
+  if (item.favicon) {
+    console.log('Using cached favicon for:', item.longUrl);
+    updateHistoryLogo(logoId, item.favicon, domain, initialColor);
+  } else {
+    // Fetch metadata from ORIGINAL URL if not cached
+    console.log('Fetching metadata for history item:', item.longUrl);
+    fetchPageMetadataFromUrl(item.longUrl).then(metadata => {
+      if (metadata && metadata.favicon) {
+        console.log('Got favicon:', metadata.favicon);
+        updateHistoryLogo(logoId, metadata.favicon, domain, initialColor);
+        // Update cache with complete metadata
+        updateHistoryItemWithMetadata(item, metadata);
+      }
+    });
+  }
+  
   // Add event listeners to action buttons
   const actionButtons = card.querySelectorAll('.history-action-btn');
   actionButtons.forEach(btn => {
@@ -629,7 +672,6 @@ function createHistoryCard(item) {
       } else if (action === 'open') {
         chrome.tabs.create({ url: url });
       } else if (action === 'share') {
-        // You can implement share functionality here
         copyToClipboard(url);
       } else if (action === 'delete') {
         deleteHistoryItem(item);
@@ -647,6 +689,72 @@ function createHistoryCard(item) {
   }
   
   return card;
+}
+
+// Update history logo with favicon
+function updateHistoryLogo(logoId, faviconUrl, domain, fallbackColor) {
+  const logoEl = document.getElementById(logoId);
+  if (!logoEl) return;
+  
+  const img = new Image();
+  
+  img.onload = () => {
+    logoEl.innerHTML = '';
+    logoEl.style.background = '#ffffff';
+    logoEl.style.padding = '4px';
+    logoEl.style.display = 'flex';
+    logoEl.style.alignItems = 'center';
+    logoEl.style.justifyContent = 'center';
+    
+    const faviconImg = document.createElement('img');
+    faviconImg.src = faviconUrl;
+    faviconImg.style.width = '100%';
+    faviconImg.style.height = '100%';
+    faviconImg.style.objectFit = 'contain';
+    faviconImg.onerror = () => {
+      // Fallback to text logo if favicon fails
+      logoEl.innerHTML = domain;
+      logoEl.style.background = fallbackColor;
+      logoEl.style.padding = '0';
+    };
+    
+    logoEl.appendChild(faviconImg);
+  };
+  
+  img.onerror = () => {
+    // Keep text logo if favicon fails to load
+    console.log('Favicon failed to load:', faviconUrl);
+  };
+  
+  img.src = faviconUrl;
+}
+
+// Update history item with complete metadata in storage
+async function updateHistoryItemWithMetadata(item, metadata) {
+  try {
+    const result = await chrome.storage.local.get(['urlHistory']);
+    let history = result.urlHistory || [];
+    
+    // Find and update the item
+    const index = history.findIndex(h => 
+      h.shortUrl === item.shortUrl && h.timestamp === item.timestamp
+    );
+    
+    if (index !== -1) {
+      history[index].favicon = metadata.favicon;
+      history[index].description = metadata.description;
+      history[index].siteName = metadata.siteName;
+      history[index].image = metadata.image;
+      // Update title if it was missing
+      if (!history[index].title || history[index].title === 'Untitled Page') {
+        history[index].title = metadata.title;
+      }
+      await chrome.storage.local.set({ urlHistory: history });
+      console.log('Updated history item with metadata');
+    }
+  } catch (error) {
+    console.error('Error updating history item with metadata:', error);
+  }
 }
 
 // Delete history item
