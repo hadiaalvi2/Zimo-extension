@@ -97,7 +97,7 @@ async function fetchPageMetadataFromUrl(url, useCache = true) {
     
     // Set timeout for fetch
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     const response = await fetch(url, { 
       method: 'GET',
@@ -125,7 +125,7 @@ async function fetchPageMetadataFromUrl(url, useCache = true) {
       return '';
     };
 
-    // Get favicon - optimized
+    // Get favicon
     let favicon = getMetaContent([
       'link[rel="icon"]',
       'link[rel="shortcut icon"]',
@@ -625,7 +625,7 @@ async function loadHistory() {
   }
 }
 
-// Display history items - no extra metadata fetching
+// Display history items
 function displayHistory(history) {
   historyList.innerHTML = '';
   
@@ -633,21 +633,19 @@ function displayHistory(history) {
     const wrapper = document.createElement('div');
     wrapper.className = 'history-item-wrapper';
     
+    // Add Google-style colored line
+    const line = document.createElement('div');
+    line.className = 'history-line';
+    wrapper.appendChild(line);
+    
     const card = createHistoryCard(item);
     wrapper.appendChild(card);
-    
-    if (index < history.length - 1) {
-      const line = document.createElement('div');
-      line.className = 'history-line';
-      line.innerHTML = '<img src="assets/Extension+/WS Chrome Line.svg" alt="">';
-      wrapper.appendChild(line);
-    }
     
     historyList.appendChild(wrapper);
   });
 }
 
-// Create history card using existing metadata
+// Create history card
 function createHistoryCard(item) {
   const card = document.createElement('div');
   card.className = 'card';
@@ -677,13 +675,18 @@ function createHistoryCard(item) {
       <span>${dateStr}</span>
     </div>
     <div class="history-actions">
-      <button class="history-action-btn" title="Open in new window" data-action="open" data-url="${item.shortUrl}">
-        <img src="assets/Open in New Window W.svg" alt="Open">
-      </button>
+      <button
+  class="history-action-btn"
+  title="Open in new window"
+  onclick="window.open('https://zimo.ws', '_blank')"
+>
+  <img src="assets/Open in New Window W.svg" alt="Open" />
+</button>
+
       <button class="history-action-btn" title="Copy to clipboard" data-action="copy" data-url="${item.shortUrl}">
         <img src="assets/Share/Copy Icon W.svg" alt="Copy">
       </button>
-      <button class="history-action-btn" title="Share" data-action="share" data-url="${item.shortUrl}">
+      <button class="history-action-btn" title="Share" data-action="share" data-url="${item.shortUrl}" data-title="${displayTitle}">
         <img src="assets/Share W.svg" alt="Share">
       </button>
       <button class="history-action-btn" title="Delete" data-action="delete" data-url="${item.shortUrl}">
@@ -696,7 +699,7 @@ function createHistoryCard(item) {
     </div>
   `;
   
-  // Load favicon asynchronously with timeout
+  // Load favicon asynchronously
   if (item.favicon) {
     setTimeout(() => {
       displayHistoryFavicon(logoId, item.favicon, domain, initialColor);
@@ -710,13 +713,18 @@ function createHistoryCard(item) {
       e.stopPropagation();
       const action = btn.getAttribute('data-action');
       const url = btn.getAttribute('data-url');
+      const title = btn.getAttribute('data-title');
       
       if (action === 'copy') {
         copyToClipboard(url);
       } else if (action === 'open') {
         chrome.tabs.create({ url: url });
       } else if (action === 'share') {
-        copyToClipboard(url);
+        // Set current values for sharing
+        currentShortUrl = url;
+        currentPageTitle = title || item.title;
+        // Show share menu
+        showMainView();
       } else if (action === 'delete') {
         deleteHistoryItem(item);
       }
@@ -734,7 +742,7 @@ function createHistoryCard(item) {
   return card;
 }
 
-// Display favicon for history items with timeout
+// Display favicon for history items
 function displayHistoryFavicon(logoId, faviconUrl, domain, fallbackColor) {
   const logoEl = document.getElementById(logoId);
   if (!logoEl) return;

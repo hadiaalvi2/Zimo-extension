@@ -349,6 +349,7 @@
       10%, 90% { opacity: 1; }
     }
 
+    /* History View Styles */
     #historyView {
       max-height: 400px;
       overflow-y: auto;
@@ -373,46 +374,105 @@
       background: rgba(255, 255, 255, 0.3);
     }
 
-    #historyList .card {
-      transition: all 0.2s;
-      margin-bottom: 0;
+    .history-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 20px;
     }
 
-    #historyList .card:hover {
-      background: rgba(255, 255, 255, 0.02);
-      border-color: rgba(255, 255, 255, 0.1);
+    .history-header img {
+      width: 70px;
+      height: 70px;
+      opacity: 0.7;
+    }
+
+    #historyList {
+      position: relative;
+      padding-left: 28px;
     }
 
     .history-item-wrapper {
       position: relative;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
     }
 
     .history-item-wrapper:last-child {
       margin-bottom: 0;
     }
 
-    .history-line {
-      position: absolute;
-      right: 0;
-      bottom: -24px;
-      width: 1px;
-      height: 24px;
-      display: flex;
-      justify-content: flex-end;
+    .history-item-wrapper:last-child .history-line {
+      display: none;
     }
 
-    .history-line img {
-      height: 100%;
-      width: auto;
+    .history-line {
+      position: absolute;
+      left: -28px;
+      top: 0;
+      bottom: -20px;
+      width: 4px;
+      background: linear-gradient(180deg, 
+        #4285f4 0%, 
+        #ea4335 25%, 
+        #fbbc04 50%, 
+        #34a853 75%, 
+        #4285f4 100%
+      );
+      border-radius: 2px;
+    }
+
+    #historyList .card {
+      transition: all 0.2s;
+      margin-bottom: 0;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 12px;
+    }
+
+    #historyList .card:hover {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(255, 255, 255, 0.12);
+      transform: translateX(2px);
+    }
+
+    #historyList .source-header {
+      margin-bottom: 8px;
+    }
+
+    #historyList .source-logo {
+      width: 40px;
+      height: 40px;
+      font-size: 12px;
+    }
+
+    #historyList .short-url {
+      font-size: 14px;
+      margin-bottom: 2px;
+    }
+
+    #historyList .page-title {
+      font-size: 12px;
+      margin-bottom: 6px;
+      -webkit-line-clamp: 1;
+    }
+
+    #historyList .original-url {
+      font-size: 10px;
+      margin-bottom: 6px;
+    }
+
+    #historyList .timestamp {
+      font-size: 10px;
+      gap: 12px;
+      margin-bottom: 8px;
     }
 
     .history-actions {
       display: flex;
       align-items: center;
-      gap: 16px;
-      margin-top: 12px;
-      padding-left: 0;
+      gap: 12px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
     }
 
     .history-action-btn {
@@ -420,8 +480,8 @@
       border: none;
       cursor: pointer;
       padding: 0;
-      width: 20px;
-      height: 20px;
+      width: 18px;
+      height: 18px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -432,7 +492,7 @@
       width: 100%;
       height: 100%;
       object-fit: contain;
-      opacity: 0.7;
+      opacity: 0.6;
       transition: opacity 0.2s;
     }
 
@@ -443,19 +503,34 @@
     .history-clicks {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       margin-left: auto;
     }
 
     .history-clicks img {
-      width: 16px;
-      height: 16px;
-      opacity: 0.6;
+      width: 14px;
+      height: 14px;
+      opacity: 0.5;
     }
 
     .history-clicks span {
-      font-size: 13px;
-      color: rgba(255, 255, 255, 0.6);
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    #emptyHistory {
+      text-align: center;
+      padding: 40px 20px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    #emptyHistory p {
+      margin-bottom: 8px;
+    }
+
+    #emptyHistory p:last-child {
+      font-size: 12px;
+      opacity: 0.7;
     }
   </style>
 </head>
@@ -501,13 +576,13 @@
 
     <!-- History View -->
     <div id="historyView" style="display: none;">
-      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
-        <img src="assets/Extension+/RECENT W.svg" alt="Recent" style="width: 70px; height: 70px; opacity: 0.7;">
+      <div class="history-header">
+        <img src="assets/Extension+/RECENT W.svg" alt="Recent">
       </div>
-      <div id="historyList" style="position: relative;"></div>
-      <div id="emptyHistory" style="display: none; text-align: center; padding: 40px 20px; color: rgba(255, 255, 255, 0.5);">
+      <div id="historyList"></div>
+      <div id="emptyHistory" style="display: none;">
         <p>No URL history yet</p>
-        <p style="font-size: 12px; margin-top: 8px;">Shortened URLs will appear here</p>
+        <p>Shortened URLs will appear here</p>
       </div>
     </div>
 
