@@ -41,17 +41,31 @@ async function shortenUrl(url) {
   throw new Error('All URL shortening services failed');
 }
 
-// Fetch COMPLETE page metadata from ORIGINAL URL
+// Fetch COMPLETE page metadata from ORIGINAL URL (runs in background with full permissions)
 async function fetchPageMetadataFromUrl(url) {
   try {
-    console.log('Fetching metadata from ORIGINAL URL:', url);
+    console.log('Background: Fetching metadata from ORIGINAL URL:', url);
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
     const response = await fetch(url, { 
       method: 'GET',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache'
+      },
+      signal: controller.signal
     });
-    if (!response.ok) throw new Error('Failed to fetch URL');
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      console.error('Response not OK:', response.status);
+      throw new Error('Failed to fetch URL');
+    }
     
     const html = await response.text();
     const parser = new DOMParser();
@@ -66,28 +80,6 @@ async function fetchPageMetadataFromUrl(url) {
       }
       return '';
     };
-
-    // Get favicon
-    let favicon = getMetaContent([
-      'link[rel="icon"]',
-      'link[rel="shortcut icon"]',
-      'link[rel="apple-touch-icon"]',
-      'link[rel="apple-touch-icon-precomposed"]'
-    ]);
-
-    // Resolve relative favicon URLs to absolute URLs
-    if (favicon && !favicon.startsWith('http')) {
-      try {
-        favicon = new URL(favicon, url).href;
-      } catch (e) {
-        favicon = new URL(url).origin + (favicon.startsWith('/') ? favicon : '/' + favicon);
-      }
-    }
-
-    // Fallback to standard favicon location if not found
-    if (!favicon) {
-      favicon = new URL(url).origin + '/favicon.ico';
-    }
 
     // Get title
     const title = getMetaContent([
@@ -117,6 +109,30 @@ async function fetchPageMetadataFromUrl(url) {
       'meta[name="twitter:image:src"]'
     ]);
 
+    // Get favicon
+    let favicon = getMetaContent([
+      'link[rel="icon"]',
+      'link[rel="shortcut icon"]',
+      'link[rel="apple-touch-icon"]',
+      'link[rel="apple-touch-icon-precomposed"]'
+    ]);
+
+    // Resolve relative favicon URLs to absolute URLs
+    if (favicon && !favicon.startsWith('http')) {
+      try {
+        favicon = new URL(favicon, url).href;
+      } catch (e) {
+        const urlObj = new URL(url);
+        favicon = urlObj.origin + (favicon.startsWith('/') ? favicon : '/' + favicon);
+      }
+    }
+
+    // Fallback to standard favicon location if not found
+    if (!favicon) {
+      const urlObj = new URL(url);
+      favicon = `${urlObj.origin}/favicon.ico`;
+    }
+
     const metadata = {
       title: title.trim(),
       description: description?.trim() || '',
@@ -125,11 +141,17 @@ async function fetchPageMetadataFromUrl(url) {
       favicon: favicon
     };
 
-    console.log('Fetched complete metadata:', metadata);
+    console.log('Background: Fetched complete metadata:', metadata);
     return metadata;
   } catch (error) {
-    console.error('Error fetching metadata from URL:', error);
-    return null;
+    console.error('Background: Error fetching metadata from URL:', error);
+    return {
+      title: 'Untitled Page',
+      description: '',
+      siteName: '',
+      image: '',
+      favicon: ''
+    };
   }
 }
 
@@ -192,13 +214,47 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-// Message listener for resolving shortened URLs
+// Message listener for various actions
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('Background received message:', request.action);
+  
+  if (request.action === 'fetchMetadata') {
+    // Fetch metadata from original URL
+    fetchPageMetadataFromUrl(request.url)
+      .then(metadata => {
+        console.log('Sending metadata back to popup:', metadata);
+        sendResponse({ success: true, metadata });
+      })
+      .catch(error => {
+        console.error('Error in fetchMetadata:', error);
+        sendResponse({ 
+          success: false, 
+          error: error.message,
+          metadata: {
+            title: 'Untitled Page',
+            description: '',
+            siteName: '',
+            image: '',
+            favicon: ''
+          }
+        });
+      });
+    return true; // Keep channel open for async response
+  }
+  
+  if (request.action === 'shortenUrl') {
+    // Shorten URL
+    shortenUrl(request.url)
+      .then(shortUrl => sendResponse({ success: true, shortUrl }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+  
   if (request.action === 'resolveShortUrl') {
     resolveShortUrl(request.shortUrl)
       .then(originalUrl => sendResponse({ success: true, originalUrl }))
       .catch(error => sendResponse({ success: false, error: error.message }));
-    return true; // Keep channel open for async response
+    return true;
   }
 });
 

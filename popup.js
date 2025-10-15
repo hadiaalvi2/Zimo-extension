@@ -84,7 +84,106 @@ async function getCurrentTab() {
   }
 }
 
-// Fetch metadata with cache and timeout (ALWAYS uses ORIGINAL URL)
+// QR Code Generator Function
+function generateQRCode(text) {
+  const size = 200;
+  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(text)}`;
+  return qrApiUrl;
+}
+
+// QR Modal Function
+window.showQRModal = function(url) {
+  const modal = document.createElement('div');
+  modal.className = 'qr-modal';
+  modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  `;
+  
+  const modalContent = document.createElement('div');
+  modalContent.className = 'qr-modal-content';
+  modalContent.style.cssText = `
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 90%;
+    text-align: center;
+  `;
+  
+  modalContent.innerHTML = `
+    <div class="qr-modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <h3 style="margin: 0; font-size: 18px; color: #333;">QR Code</h3>
+      <button class="qr-close-btn" style="background: none; border: none; font-size: 28px; cursor: pointer; color: #666; line-height: 1;">&times;</button>
+    </div>
+    <div class="qr-modal-body">
+      <img src="${generateQRCode(url)}" alt="QR Code" class="qr-code-img" style="max-width: 200px; margin: 16px auto; display: block;">
+      <p class="qr-url" style="word-break: break-all; font-size: 12px; color: #666; margin: 12px 0;">${url}</p>
+      <button class="qr-download-btn" style="background: #1976d2; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px;">Download QR Code</button>
+    </div>
+  `;
+  
+  modal.appendChild(modalContent);
+  document.body.appendChild(modal);
+  
+  modal.querySelector('.qr-close-btn').addEventListener('click', () => {
+    modal.remove();
+  });
+  
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      modal.remove();
+    }
+  });
+
+  modal.querySelector('.qr-download-btn').addEventListener('click', async () => {
+    const qrUrl = generateQRCode(url);
+    try {
+      const response = await fetch(qrUrl);
+      const blob = await response.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `qr-code-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error('Download failed:', err);
+      alert('Failed to download QR code. Please try right-clicking on the image and saving it.');
+    }
+  });
+}
+
+// Native Share Function
+window.nativeShare = async function(url, title) {
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: title || 'Shortened URL',
+        text: 'Check out this link!',
+        url: url
+      });
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error('Share failed:', err);
+        alert('Share failed. Please try copying the link instead.');
+      }
+    }
+  } else {
+    alert('Native sharing is not supported in this browser. Please use the share icons or copy the link.');
+  }
+}
+
+// Enhanced metadata fetching using DOM parser (from code 1 approach)
 async function fetchPageMetadataFromUrl(originalUrl, useCache = true) {
   try {
     // Check cache first using ORIGINAL URL
@@ -97,7 +196,7 @@ async function fetchPageMetadataFromUrl(originalUrl, useCache = true) {
     
     // Set timeout for fetch
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
 
     const response = await fetch(originalUrl, { 
       method: 'GET',
@@ -115,67 +214,44 @@ async function fetchPageMetadataFromUrl(originalUrl, useCache = true) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
     
-    const getMetaContent = (selectors) => {
-      for (const selector of selectors) {
-        const element = doc.querySelector(selector);
-        if (element) {
-          return element.content || element.textContent || element.href;
-        }
-      }
-      return '';
-    };
-
-    // Get favicon
-    let favicon = getMetaContent([
-      'link[rel="icon"]',
-      'link[rel="shortcut icon"]',
-      'link[rel="apple-touch-icon"]'
-    ]);
-
-    if (favicon && !favicon.startsWith('http')) {
-      try {
-        favicon = new URL(favicon, originalUrl).href;
-      } catch (e) {
-        favicon = new URL(originalUrl).origin + (favicon.startsWith('/') ? favicon : '/' + favicon);
-      }
-    }
-
+    // Enhanced metadata extraction
+    const title = doc.querySelector('title')?.textContent || 
+                  doc.querySelector('meta[property="og:title"]')?.content || 
+                  doc.querySelector('meta[name="twitter:title"]')?.content || 
+                  'Untitled Page';
+    
+    const description = doc.querySelector('meta[name="description"]')?.content || 
+                        doc.querySelector('meta[property="og:description"]')?.content || 
+                        doc.querySelector('meta[name="twitter:description"]')?.content || 
+                        '';
+    
+    let favicon = doc.querySelector('link[rel="icon"]')?.href || 
+                  doc.querySelector('link[rel="shortcut icon"]')?.href ||
+                  doc.querySelector('link[rel="apple-touch-icon"]')?.href;
+    
     if (!favicon) {
-      favicon = new URL(originalUrl).origin + '/favicon.ico';
+      const urlObj = new URL(originalUrl);
+      favicon = `${urlObj.origin}/favicon.ico`;
+    } else if (favicon.startsWith('/')) {
+      const urlObj = new URL(originalUrl);
+      favicon = `${urlObj.origin}${favicon}`;
+    } else if (!favicon.startsWith('http')) {
+      const urlObj = new URL(originalUrl);
+      favicon = `${urlObj.origin}/${favicon}`;
     }
-
-    // Get title
-    const title = getMetaContent([
-      'meta[property="og:title"]',
-      'meta[name="twitter:title"]',
-      'meta[name="title"]'
-    ]) || doc.querySelector('title')?.textContent || 'Untitled Page';
-
-    // Get description
-    const description = getMetaContent([
-      'meta[property="og:description"]',
-      'meta[name="twitter:description"]',
-      'meta[name="description"]'
-    ]);
-
-    // Get site name
-    const siteName = getMetaContent([
-      'meta[property="og:site_name"]',
-      'meta[name="application-name"]'
-    ]);
-
-    // Get image
-    const image = getMetaContent([
-      'meta[property="og:image"]',
-      'meta[property="og:image:url"]',
-      'meta[name="twitter:image"]'
-    ]);
+    
+    const siteName = doc.querySelector('meta[property="og:site_name"]')?.content || 
+                     doc.querySelector('meta[name="application-name"]')?.content || '';
+    
+    const image = doc.querySelector('meta[property="og:image"]')?.content || 
+                  doc.querySelector('meta[property="og:image:url"]')?.content || 
+                  doc.querySelector('meta[name="twitter:image"]')?.content || '';
 
     const metadata = {
       title: title.trim(),
-      description: description?.trim() || '',
-      siteName: siteName?.trim() || '',
-      image: image || '',
+      description: description.trim(),
+      siteName: siteName.trim(),
+      image: image,
       favicon: favicon
     };
 
@@ -443,6 +519,19 @@ function showCopyFeedback() {
   const feedback = document.createElement('div');
   feedback.className = 'copy-feedback';
   feedback.textContent = '✓ Copied to clipboard!';
+  feedback.style.cssText = `
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #4caf50;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 6px;
+    font-size: 14px;
+    z-index: 10000;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  `;
   document.body.appendChild(feedback);
   
   setTimeout(() => {
@@ -452,8 +541,8 @@ function showCopyFeedback() {
 
 // Share URL - ALWAYS shares shortened URL but metadata is from ORIGINAL
 function shareUrl(platform) {
-  const url = encodeURIComponent(currentShortUrl); // Share SHORT URL
-  const text = encodeURIComponent(currentPageTitle); // Title from ORIGINAL URL
+  const url = encodeURIComponent(currentShortUrl);
+  const text = encodeURIComponent(currentPageTitle);
   
   const shareUrls = {
     whatsapp: `https://wa.me/?text=${text}%20${url}`,
@@ -461,13 +550,18 @@ function shareUrl(platform) {
     facebook: `https://www.facebook.com/sharer/sharer.php?u=${url}`,
     twitter: `https://twitter.com/intent/tweet?url=${url}&text=${text}`,
     reddit: `https://reddit.com/submit?url=${url}&title=${text}`,
+    linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${url}`,
+    email: `mailto:?subject=${text}&body=${text}%20${url}`,
     discord: `https://discord.com/channels/@me`,
     bluesky: `https://bsky.app/intent/compose?text=${text}%20${url}`,
     threads: `https://www.threads.net/intent/post?text=${text}%20${url}`,
-    omn: `https://omn.com/share?url=${url}&title=${text}`
+    qr: () => window.showQRModal(currentShortUrl),
+    native: () => window.nativeShare(currentShortUrl, currentPageTitle)
   };
   
-  if (shareUrls[platform]) {
+  if (typeof shareUrls[platform] === 'function') {
+    shareUrls[platform]();
+  } else if (shareUrls[platform]) {
     chrome.tabs.create({ url: shareUrls[platform] });
   }
 }
@@ -489,6 +583,10 @@ function setupEventListeners() {
       const action = btn.getAttribute('data-action');
       if (action === 'copy') {
         copyToClipboard(currentShortUrl);
+      } else if (action === 'qr') {
+        window.showQRModal(currentShortUrl);
+      } else if (action === 'native') {
+        window.nativeShare(currentShortUrl, currentPageTitle);
       } else {
         shareUrl(action);
       }
@@ -532,11 +630,9 @@ async function saveToHistory(longUrl, shortUrl, title, metadata) {
     const history = result.urlHistory || [];
     let clickCount = result.urlClickCount || {};
     
-    // Check if short URL already exists
     const existingIndex = history.findIndex(item => item.shortUrl === shortUrl);
     
     if (existingIndex !== -1) {
-      // Update existing entry with fresh metadata from ORIGINAL URL
       clickCount[shortUrl] = (clickCount[shortUrl] || 1) + 1;
       history[existingIndex].clickCount = clickCount[shortUrl];
       history[existingIndex].title = title;
@@ -544,14 +640,12 @@ async function saveToHistory(longUrl, shortUrl, title, metadata) {
       history[existingIndex].description = metadata?.description || null;
       history[existingIndex].siteName = metadata?.siteName || null;
       history[existingIndex].image = metadata?.image || null;
-      // Move to top
       const [item] = history.splice(existingIndex, 1);
       history.unshift(item);
     } else {
-      // New entry with metadata from ORIGINAL URL
       clickCount[shortUrl] = 1;
       history.unshift({
-        longUrl, // Store ORIGINAL URL
+        longUrl,
         shortUrl,
         title,
         timestamp: new Date().toISOString(),
@@ -638,7 +732,6 @@ function displayHistory(history) {
     const wrapper = document.createElement('div');
     wrapper.className = 'history-item-wrapper';
     
-    // Add Google-style colored line
     const line = document.createElement('div');
     line.className = 'history-line';
     wrapper.appendChild(line);
@@ -655,7 +748,7 @@ function createHistoryCard(item) {
   const card = document.createElement('div');
   card.className = 'card';
   
-  const domain = extractDomain(item.longUrl); // Use ORIGINAL URL for domain
+  const domain = extractDomain(item.longUrl);
   const date = new Date(item.timestamp);
   const timeStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
   const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -685,6 +778,11 @@ function createHistoryCard(item) {
       </button>
       <button class="history-action-btn" title="Copy short URL" data-action="copy" data-url="${item.shortUrl}">
         <img src="assets/Share/Copy Icon W.svg" alt="Copy">
+      </button>
+      <button class="history-action-btn" title="QR Code" data-action="qr" data-url="${item.shortUrl}">
+        <svg viewBox="0 0 24 24" style="width: 20px; height: 20px; fill: currentColor;">
+          <path d="M3 11h8V3H3v8zm2-6h4v4H5V5zm8-2v8h8V3h-8zm6 6h-4V5h4v4zM3 21h8v-8H3v8zm2-6h4v4H5v-4zm13-2h-2v3h-3v2h3v3h2v-3h3v-2h-3v-3zm0-1h3v-3h-3v3z"/>
+        </svg>
       </button>
       <button class="history-action-btn" title="Share short URL" data-action="share" data-short-url="${item.shortUrl}" data-long-url="${item.longUrl}" data-title="${displayTitle}">
         <img src="assets/Share W.svg" alt="Share">
@@ -718,16 +816,17 @@ function createHistoryCard(item) {
         copyToClipboard(url);
       } else if (action === 'open') {
         const url = btn.getAttribute('data-url');
-        chrome.tabs.create({ url: url }); // Open ORIGINAL URL
+        chrome.tabs.create({ url: url });
+      } else if (action === 'qr') {
+        const url = btn.getAttribute('data-url');
+        window.showQRModal(url);
       } else if (action === 'share') {
-        // Share SHORT URL but use metadata from ORIGINAL URL
         const shortUrl = btn.getAttribute('data-short-url');
         const longUrl = btn.getAttribute('data-long-url');
         const title = btn.getAttribute('data-title');
         
-        // Set current values for sharing
-        currentShortUrl = shortUrl; // Share the SHORT URL
-        currentOriginalUrl = longUrl; // But metadata is from ORIGINAL
+        currentShortUrl = shortUrl;
+        currentOriginalUrl = longUrl;
         currentPageTitle = title || item.title;
         currentMetadata = {
           title: item.title,
@@ -737,7 +836,6 @@ function createHistoryCard(item) {
           favicon: item.favicon
         };
         
-        // Show main view with share options
         showMainView();
         displayResult(currentShortUrl, currentPageTitle, currentOriginalUrl, domain, currentMetadata);
       } else if (action === 'delete') {
@@ -750,7 +848,7 @@ function createHistoryCard(item) {
   if (shortUrlElInCard) {
     shortUrlElInCard.addEventListener('click', (e) => {
       e.stopPropagation();
-      copyToClipboard(item.shortUrl); // Copy SHORT URL
+      copyToClipboard(item.shortUrl);
     });
   }
   
@@ -808,7 +906,6 @@ async function deleteHistoryItem(itemToDelete) {
       item.timestamp !== itemToDelete.timestamp
     );
     
-    // Clean up click count if no more items with this short URL
     if (!history.some(item => item.shortUrl === itemToDelete.shortUrl)) {
       delete clickCount[itemToDelete.shortUrl];
     }
