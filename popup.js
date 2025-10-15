@@ -50,10 +50,10 @@ async function loadMetadataCache() {
   }
 }
 
-// Save metadata to cache
-async function saveMetadataToCache(url, metadata) {
+// Save metadata to cache (using ORIGINAL URL as key)
+async function saveMetadataToCache(originalUrl, metadata) {
   try {
-    metadataCache[url] = {
+    metadataCache[originalUrl] = {
       ...metadata,
       cachedAt: Date.now()
     };
@@ -84,22 +84,22 @@ async function getCurrentTab() {
   }
 }
 
-// Fetch metadata with cache and timeout
-async function fetchPageMetadataFromUrl(url, useCache = true) {
+// Fetch metadata with cache and timeout (ALWAYS uses ORIGINAL URL)
+async function fetchPageMetadataFromUrl(originalUrl, useCache = true) {
   try {
-    // Check cache first
-    if (useCache && metadataCache[url]) {
-      console.log('Using cached metadata for:', url);
-      return metadataCache[url];
+    // Check cache first using ORIGINAL URL
+    if (useCache && metadataCache[originalUrl]) {
+      console.log('Using cached metadata for ORIGINAL URL:', originalUrl);
+      return metadataCache[originalUrl];
     }
 
-    console.log('Fetching metadata from:', url);
+    console.log('Fetching metadata from ORIGINAL URL:', originalUrl);
     
     // Set timeout for fetch
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-    const response = await fetch(url, { 
+    const response = await fetch(originalUrl, { 
       method: 'GET',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -134,14 +134,14 @@ async function fetchPageMetadataFromUrl(url, useCache = true) {
 
     if (favicon && !favicon.startsWith('http')) {
       try {
-        favicon = new URL(favicon, url).href;
+        favicon = new URL(favicon, originalUrl).href;
       } catch (e) {
-        favicon = new URL(url).origin + (favicon.startsWith('/') ? favicon : '/' + favicon);
+        favicon = new URL(originalUrl).origin + (favicon.startsWith('/') ? favicon : '/' + favicon);
       }
     }
 
     if (!favicon) {
-      favicon = new URL(url).origin + '/favicon.ico';
+      favicon = new URL(originalUrl).origin + '/favicon.ico';
     }
 
     // Get title
@@ -179,13 +179,13 @@ async function fetchPageMetadataFromUrl(url, useCache = true) {
       favicon: favicon
     };
 
-    // Cache the metadata
-    await saveMetadataToCache(url, metadata);
-    console.log('Fetched and cached metadata:', metadata);
+    // Cache the metadata using ORIGINAL URL
+    await saveMetadataToCache(originalUrl, metadata);
+    console.log('Fetched and cached metadata for ORIGINAL URL:', metadata);
     
     return metadata;
   } catch (error) {
-    console.error('Error fetching metadata from URL:', error.message);
+    console.error('Error fetching metadata from ORIGINAL URL:', error.message);
     return null;
   }
 }
@@ -300,7 +300,7 @@ async function shortenCurrentTab() {
 
     currentOriginalUrl = tab.url;
     
-    // Fetch metadata with timeout
+    // Fetch metadata from ORIGINAL URL with timeout
     let metadata = await fetchPageMetadataFromUrl(currentOriginalUrl);
     
     if (!metadata || !metadata.title) {
@@ -311,7 +311,7 @@ async function shortenCurrentTab() {
       currentMetadata = metadata;
     }
     
-    console.log('Using metadata:', currentMetadata);
+    console.log('Using metadata from ORIGINAL URL:', currentMetadata);
     
     // Shorten URL
     currentShortUrl = await shortenUrl(currentOriginalUrl);
@@ -450,10 +450,10 @@ function showCopyFeedback() {
   }, 2000);
 }
 
-// Share URL
+// Share URL - ALWAYS shares shortened URL but metadata is from ORIGINAL
 function shareUrl(platform) {
-  const url = encodeURIComponent(currentShortUrl);
-  const text = encodeURIComponent(currentPageTitle);
+  const url = encodeURIComponent(currentShortUrl); // Share SHORT URL
+  const text = encodeURIComponent(currentPageTitle); // Title from ORIGINAL URL
   
   const shareUrls = {
     whatsapp: `https://wa.me/?text=${text}%20${url}`,
@@ -525,7 +525,7 @@ function updateScrollButtons() {
   scrollRightBtn.disabled = scrollLeft + clientWidth >= scrollWidth - 1;
 }
 
-// Save to history with complete metadata
+// Save to history with complete metadata from ORIGINAL URL
 async function saveToHistory(longUrl, shortUrl, title, metadata) {
   try {
     const result = await chrome.storage.local.get(['urlHistory', 'urlClickCount']);
@@ -536,17 +536,22 @@ async function saveToHistory(longUrl, shortUrl, title, metadata) {
     const existingIndex = history.findIndex(item => item.shortUrl === shortUrl);
     
     if (existingIndex !== -1) {
-      // Update existing entry
+      // Update existing entry with fresh metadata from ORIGINAL URL
       clickCount[shortUrl] = (clickCount[shortUrl] || 1) + 1;
       history[existingIndex].clickCount = clickCount[shortUrl];
+      history[existingIndex].title = title;
+      history[existingIndex].favicon = metadata?.favicon || null;
+      history[existingIndex].description = metadata?.description || null;
+      history[existingIndex].siteName = metadata?.siteName || null;
+      history[existingIndex].image = metadata?.image || null;
       // Move to top
       const [item] = history.splice(existingIndex, 1);
       history.unshift(item);
     } else {
-      // New entry
+      // New entry with metadata from ORIGINAL URL
       clickCount[shortUrl] = 1;
       history.unshift({
-        longUrl,
+        longUrl, // Store ORIGINAL URL
         shortUrl,
         title,
         timestamp: new Date().toISOString(),
@@ -566,7 +571,7 @@ async function saveToHistory(longUrl, shortUrl, title, metadata) {
     }
     
     await chrome.storage.local.set({ urlHistory: history, urlClickCount: clickCount });
-    console.log('History saved with metadata');
+    console.log('History saved with metadata from ORIGINAL URL');
     
   } catch (error) {
     console.error('Error saving to history:', error);
@@ -650,7 +655,7 @@ function createHistoryCard(item) {
   const card = document.createElement('div');
   card.className = 'card';
   
-  const domain = extractDomain(item.longUrl);
+  const domain = extractDomain(item.longUrl); // Use ORIGINAL URL for domain
   const date = new Date(item.timestamp);
   const timeStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
   const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -675,18 +680,13 @@ function createHistoryCard(item) {
       <span>${dateStr}</span>
     </div>
     <div class="history-actions">
-      <button
-  class="history-action-btn"
-  title="Open in new window"
-  onclick="window.open('https://zimo.ws', '_blank')"
->
-  <img src="assets/Open in New Window W.svg" alt="Open" />
-</button>
-
-      <button class="history-action-btn" title="Copy to clipboard" data-action="copy" data-url="${item.shortUrl}">
+      <button class="history-action-btn" title="Open original URL" data-action="open" data-url="${item.longUrl}">
+        <img src="assets/Open in New Window W.svg" alt="Open">
+      </button>
+      <button class="history-action-btn" title="Copy short URL" data-action="copy" data-url="${item.shortUrl}">
         <img src="assets/Share/Copy Icon W.svg" alt="Copy">
       </button>
-      <button class="history-action-btn" title="Share" data-action="share" data-url="${item.shortUrl}" data-title="${displayTitle}">
+      <button class="history-action-btn" title="Share short URL" data-action="share" data-short-url="${item.shortUrl}" data-long-url="${item.longUrl}" data-title="${displayTitle}">
         <img src="assets/Share W.svg" alt="Share">
       </button>
       <button class="history-action-btn" title="Delete" data-action="delete" data-url="${item.shortUrl}">
@@ -699,7 +699,7 @@ function createHistoryCard(item) {
     </div>
   `;
   
-  // Load favicon asynchronously
+  // Load favicon asynchronously from ORIGINAL URL metadata
   if (item.favicon) {
     setTimeout(() => {
       displayHistoryFavicon(logoId, item.favicon, domain, initialColor);
@@ -709,22 +709,37 @@ function createHistoryCard(item) {
   // Add event listeners
   const actionButtons = card.querySelectorAll('.history-action-btn');
   actionButtons.forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const action = btn.getAttribute('data-action');
-      const url = btn.getAttribute('data-url');
-      const title = btn.getAttribute('data-title');
       
       if (action === 'copy') {
+        const url = btn.getAttribute('data-url');
         copyToClipboard(url);
       } else if (action === 'open') {
-        chrome.tabs.create({ url: url });
+        const url = btn.getAttribute('data-url');
+        chrome.tabs.create({ url: url }); // Open ORIGINAL URL
       } else if (action === 'share') {
+        // Share SHORT URL but use metadata from ORIGINAL URL
+        const shortUrl = btn.getAttribute('data-short-url');
+        const longUrl = btn.getAttribute('data-long-url');
+        const title = btn.getAttribute('data-title');
+        
         // Set current values for sharing
-        currentShortUrl = url;
+        currentShortUrl = shortUrl; // Share the SHORT URL
+        currentOriginalUrl = longUrl; // But metadata is from ORIGINAL
         currentPageTitle = title || item.title;
-        // Show share menu
+        currentMetadata = {
+          title: item.title,
+          description: item.description,
+          siteName: item.siteName,
+          image: item.image,
+          favicon: item.favicon
+        };
+        
+        // Show main view with share options
         showMainView();
+        displayResult(currentShortUrl, currentPageTitle, currentOriginalUrl, domain, currentMetadata);
       } else if (action === 'delete') {
         deleteHistoryItem(item);
       }
@@ -735,7 +750,7 @@ function createHistoryCard(item) {
   if (shortUrlElInCard) {
     shortUrlElInCard.addEventListener('click', (e) => {
       e.stopPropagation();
-      copyToClipboard(item.shortUrl);
+      copyToClipboard(item.shortUrl); // Copy SHORT URL
     });
   }
   

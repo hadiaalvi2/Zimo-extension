@@ -191,3 +191,31 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     console.log('Context menu shorten:', info.linkUrl);
   }
 });
+
+// Message listener for resolving shortened URLs
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'resolveShortUrl') {
+    resolveShortUrl(request.shortUrl)
+      .then(originalUrl => sendResponse({ success: true, originalUrl }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true; // Keep channel open for async response
+  }
+});
+
+// Resolve shortened URL to original URL
+async function resolveShortUrl(shortUrl) {
+  try {
+    console.log('Resolving short URL:', shortUrl);
+    const response = await fetch(shortUrl, {
+      method: 'HEAD',
+      redirect: 'follow'
+    });
+    
+    const finalUrl = response.url;
+    console.log('Resolved to:', finalUrl);
+    return finalUrl;
+  } catch (error) {
+    console.error('Error resolving short URL:', error);
+    throw error;
+  }
+}
