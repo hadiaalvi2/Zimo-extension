@@ -58,7 +58,6 @@ async function saveMetadataToCache(originalUrl, metadata) {
       cachedAt: Date.now()
     };
     
-    // Keep cache size manageable (max 200 entries)
     const keys = Object.keys(metadataCache);
     if (keys.length > 200) {
       const sorted = keys.sort((a, b) => 
@@ -163,15 +162,19 @@ window.showQRModal = function(url) {
   });
 }
 
-// Native Share Function
-window.nativeShare = async function(url, title) {
+// Enhanced Native Share Function with Rich Metadata
+window.nativeShare = async function(shortUrl, title, description, imageUrl) {
   if (navigator.share) {
     try {
-      await navigator.share({
-        title: title || 'Shortened URL',
-        text: 'Check out this link!',
-        url: url
-      });
+      const shareData = {
+        title: title || 'Check out this link',
+        text: description || currentPageTitle || 'Shortened URL',
+        url: shortUrl
+      };
+      
+      // Note: Image sharing is limited in Web Share API
+      // Most platforms will fetch metadata from the URL automatically
+      await navigator.share(shareData);
     } catch (err) {
       if (err.name !== 'AbortError') {
         console.error('Share failed:', err);
@@ -183,86 +186,47 @@ window.nativeShare = async function(url, title) {
   }
 }
 
-// Enhanced metadata fetching using DOM parser (from code 1 approach)
+// Enhanced metadata fetching using background script
 async function fetchPageMetadataFromUrl(originalUrl, useCache = true) {
   try {
-    // Check cache first using ORIGINAL URL
+    // Check cache first
     if (useCache && metadataCache[originalUrl]) {
-      console.log('Using cached metadata for ORIGINAL URL:', originalUrl);
+      console.log('Using cached metadata for:', originalUrl);
       return metadataCache[originalUrl];
     }
 
-    console.log('Fetching metadata from ORIGINAL URL:', originalUrl);
+    console.log('Requesting metadata from background script for:', originalUrl);
     
-    // Set timeout for fetch
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-    const response = await fetch(originalUrl, { 
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      signal: controller.signal
+    // Use background script to fetch metadata (has full permissions)
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage(
+        { action: 'fetchMetadata', url: originalUrl },
+        response => {
+          if (chrome.runtime.lastError) {
+            console.error('Runtime error:', chrome.runtime.lastError);
+            reject(chrome.runtime.lastError);
+            return;
+          }
+          
+          if (response && response.success) {
+            const metadata = response.metadata;
+            saveMetadataToCache(originalUrl, metadata);
+            resolve(metadata);
+          } else {
+            reject(new Error(response?.error || 'Failed to fetch metadata'));
+          }
+        }
+      );
     });
-    
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) throw new Error('Failed to fetch URL');
-    
-    const html = await response.text();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-    
-    // Enhanced metadata extraction
-    const title = doc.querySelector('title')?.textContent || 
-                  doc.querySelector('meta[property="og:title"]')?.content || 
-                  doc.querySelector('meta[name="twitter:title"]')?.content || 
-                  'Untitled Page';
-    
-    const description = doc.querySelector('meta[name="description"]')?.content || 
-                        doc.querySelector('meta[property="og:description"]')?.content || 
-                        doc.querySelector('meta[name="twitter:description"]')?.content || 
-                        '';
-    
-    let favicon = doc.querySelector('link[rel="icon"]')?.href || 
-                  doc.querySelector('link[rel="shortcut icon"]')?.href ||
-                  doc.querySelector('link[rel="apple-touch-icon"]')?.href;
-    
-    if (!favicon) {
-      const urlObj = new URL(originalUrl);
-      favicon = `${urlObj.origin}/favicon.ico`;
-    } else if (favicon.startsWith('/')) {
-      const urlObj = new URL(originalUrl);
-      favicon = `${urlObj.origin}${favicon}`;
-    } else if (!favicon.startsWith('http')) {
-      const urlObj = new URL(originalUrl);
-      favicon = `${urlObj.origin}/${favicon}`;
-    }
-    
-    const siteName = doc.querySelector('meta[property="og:site_name"]')?.content || 
-                     doc.querySelector('meta[name="application-name"]')?.content || '';
-    
-    const image = doc.querySelector('meta[property="og:image"]')?.content || 
-                  doc.querySelector('meta[property="og:image:url"]')?.content || 
-                  doc.querySelector('meta[name="twitter:image"]')?.content || '';
-
-    const metadata = {
-      title: title.trim(),
-      description: description.trim(),
-      siteName: siteName.trim(),
-      image: image,
-      favicon: favicon
-    };
-
-    // Cache the metadata using ORIGINAL URL
-    await saveMetadataToCache(originalUrl, metadata);
-    console.log('Fetched and cached metadata for ORIGINAL URL:', metadata);
-    
-    return metadata;
   } catch (error) {
-    console.error('Error fetching metadata from ORIGINAL URL:', error.message);
-    return null;
+    console.error('Error fetching metadata:', error);
+    return {
+      title: 'Untitled Page',
+      description: '',
+      siteName: '',
+      image: '',
+      favicon: ''
+    };
   }
 }
 
@@ -376,7 +340,7 @@ async function shortenCurrentTab() {
 
     currentOriginalUrl = tab.url;
     
-    // Fetch metadata from ORIGINAL URL with timeout
+    // Fetch metadata from ORIGINAL URL
     let metadata = await fetchPageMetadataFromUrl(currentOriginalUrl);
     
     if (!metadata || !metadata.title) {
@@ -539,24 +503,58 @@ function showCopyFeedback() {
   }, 2000);
 }
 
-// Share URL - ALWAYS shares shortened URL but metadata is from ORIGINAL
+// ENHANCED Share URL with Rich Metadata
 function shareUrl(platform) {
-  const url = encodeURIComponent(currentShortUrl);
-  const text = encodeURIComponent(currentPageTitle);
+  const shortUrl = currentShortUrl;
+  const originalUrl = currentOriginalUrl;
+  const title = currentPageTitle;
+  const description = currentMetadata.description || '';
+  const image = currentMetadata.image || '';
+  
+  // Create rich text with metadata for better sharing
+  const richText = `${title}${description ? '\n\n' + description : ''}`;
+  
+  const url = encodeURIComponent(shortUrl);
+  const text = encodeURIComponent(title);
+  const desc = encodeURIComponent(description);
+  const fullText = encodeURIComponent(richText);
   
   const shareUrls = {
-    whatsapp: `https://wa.me/?text=${text}%20${url}`,
-    telegram: `https://t.me/share/url?url=${url}&text=${text}`,
+    // WhatsApp - includes title and description
+    whatsapp: `https://wa.me/?text=${encodeURIComponent(title + '\n' + shortUrl + (description ? '\n\n' + description : ''))}`,
+    
+    // Telegram - includes title and URL
+    telegram: `https://t.me/share/url?url=${url}&text=${fullText}`,
+    
+    // Facebook - only URL (Facebook fetches metadata automatically)
     facebook: `https://www.facebook.com/sharer/sharer.php?u=${url}`,
-    twitter: `https://twitter.com/intent/tweet?url=${url}&text=${text}`,
+    
+    // Twitter/X - includes title and description in tweet
+    twitter: `https://twitter.com/intent/tweet?url=${url}&text=${fullText}`,
+    
+    // Reddit - includes title
     reddit: `https://reddit.com/submit?url=${url}&title=${text}`,
+    
+    // LinkedIn - URL only (LinkedIn fetches metadata)
     linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${url}`,
-    email: `mailto:?subject=${text}&body=${text}%20${url}`,
+    
+    // Email - rich text format
+    email: `mailto:?subject=${text}&body=${encodeURIComponent(title + '\n\n' + (description || '') + '\n\n' + shortUrl + '\n\nView original: ' + originalUrl)}`,
+    
+    // Discord - paste the short URL (Discord will fetch metadata)
     discord: `https://discord.com/channels/@me`,
-    bluesky: `https://bsky.app/intent/compose?text=${text}%20${url}`,
-    threads: `https://www.threads.net/intent/post?text=${text}%20${url}`,
-    qr: () => window.showQRModal(currentShortUrl),
-    native: () => window.nativeShare(currentShortUrl, currentPageTitle)
+    
+    // BlueSky - includes title and description
+    bluesky: `https://bsky.app/intent/compose?text=${encodeURIComponent(title + '\n\n' + shortUrl + (description ? '\n\n' + description : ''))}`,
+    
+    // Threads - includes title and description
+    threads: `https://www.threads.net/intent/post?text=${encodeURIComponent(title + '\n\n' + shortUrl + (description ? '\n\n' + description : ''))}`,
+    
+    // QR Code
+    qr: () => window.showQRModal(shortUrl),
+    
+    // Native Share with rich metadata
+    native: () => window.nativeShare(shortUrl, title, description, image)
   };
   
   if (typeof shareUrls[platform] === 'function') {
@@ -586,7 +584,7 @@ function setupEventListeners() {
       } else if (action === 'qr') {
         window.showQRModal(currentShortUrl);
       } else if (action === 'native') {
-        window.nativeShare(currentShortUrl, currentPageTitle);
+        window.nativeShare(currentShortUrl, currentPageTitle, currentMetadata.description, currentMetadata.image);
       } else {
         shareUrl(action);
       }
@@ -623,7 +621,7 @@ function updateScrollButtons() {
   scrollRightBtn.disabled = scrollLeft + clientWidth >= scrollWidth - 1;
 }
 
-// Save to history with complete metadata from ORIGINAL URL
+// Save to history with complete metadata
 async function saveToHistory(longUrl, shortUrl, title, metadata) {
   try {
     const result = await chrome.storage.local.get(['urlHistory', 'urlClickCount']);
@@ -665,7 +663,7 @@ async function saveToHistory(longUrl, shortUrl, title, metadata) {
     }
     
     await chrome.storage.local.set({ urlHistory: history, urlClickCount: clickCount });
-    console.log('History saved with metadata from ORIGINAL URL');
+    console.log('History saved with complete metadata');
     
   } catch (error) {
     console.error('Error saving to history:', error);
@@ -784,7 +782,7 @@ function createHistoryCard(item) {
           <path d="M3 11h8V3H3v8zm2-6h4v4H5V5zm8-2v8h8V3h-8zm6 6h-4V5h4v4zM3 21h8v-8H3v8zm2-6h4v4H5v-4zm13-2h-2v3h-3v2h3v3h2v-3h3v-2h-3v-3zm0-1h3v-3h-3v3z"/>
         </svg>
       </button>
-      <button class="history-action-btn" title="Share short URL" data-action="share" data-short-url="${item.shortUrl}" data-long-url="${item.longUrl}" data-title="${displayTitle}">
+      <button class="history-action-btn" title="Share" data-action="share" data-short-url="${item.shortUrl}" data-long-url="${item.longUrl}" data-title="${displayTitle}">
         <img src="assets/Share W.svg" alt="Share">
       </button>
       <button class="history-action-btn" title="Delete" data-action="delete" data-url="${item.shortUrl}">
@@ -797,7 +795,7 @@ function createHistoryCard(item) {
     </div>
   `;
   
-  // Load favicon asynchronously from ORIGINAL URL metadata
+  // Load favicon asynchronously
   if (item.favicon) {
     setTimeout(() => {
       displayHistoryFavicon(logoId, item.favicon, domain, initialColor);
