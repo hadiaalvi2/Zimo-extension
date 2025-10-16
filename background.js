@@ -1,3 +1,17 @@
+// Keep service worker alive
+let keepAliveInterval;
+
+function startKeepAlive() {
+  if (keepAliveInterval) return;
+  keepAliveInterval = setInterval(() => {
+    chrome.runtime.getPlatformInfo(() => {
+      // Just to keep the service worker alive
+    });
+  }, 20000); // Every 20 seconds
+}
+
+startKeepAlive();
+
 // Shorten URL function
 async function shortenUrl(url) {
   const services = [
@@ -214,48 +228,38 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-// Message listener for various actions
+// FIXED: Message listener with proper async handling
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Background received message:', request.action);
   
-  if (request.action === 'fetchMetadata') {
-    // Fetch metadata from original URL
-    fetchPageMetadataFromUrl(request.url)
-      .then(metadata => {
-        console.log('Sending metadata back to popup:', metadata);
+  // Handle async operations properly
+  (async () => {
+    try {
+      if (request.action === 'fetchMetadata') {
+        console.log('Fetching metadata for:', request.url);
+        const metadata = await fetchPageMetadataFromUrl(request.url);
         sendResponse({ success: true, metadata });
-      })
-      .catch(error => {
-        console.error('Error in fetchMetadata:', error);
-        sendResponse({ 
-          success: false, 
-          error: error.message,
-          metadata: {
-            title: 'Untitled Page',
-            description: '',
-            siteName: '',
-            image: '',
-            favicon: ''
-          }
-        });
-      });
-    return true; // Keep channel open for async response
-  }
+      } 
+      else if (request.action === 'shortenUrl') {
+        console.log('Shortening URL:', request.url);
+        const shortUrl = await shortenUrl(request.url);
+        sendResponse({ success: true, shortUrl });
+      } 
+      else if (request.action === 'resolveShortUrl') {
+        console.log('Resolving short URL:', request.shortUrl);
+        const originalUrl = await resolveShortUrl(request.shortUrl);
+        sendResponse({ success: true, originalUrl });
+      }
+      else {
+        sendResponse({ success: false, error: 'Unknown action: ' + request.action });
+      }
+    } catch (error) {
+      console.error('Error handling message:', error);
+      sendResponse({ success: false, error: error.message });
+    }
+  })();
   
-  if (request.action === 'shortenUrl') {
-    // Shorten URL
-    shortenUrl(request.url)
-      .then(shortUrl => sendResponse({ success: true, shortUrl }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-  
-  if (request.action === 'resolveShortUrl') {
-    resolveShortUrl(request.shortUrl)
-      .then(originalUrl => sendResponse({ success: true, originalUrl }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
+  return true; // Keep channel open for async response
 });
 
 // Resolve shortened URL to original URL
@@ -275,3 +279,6 @@ async function resolveShortUrl(shortUrl) {
     throw error;
   }
 }
+
+// Log when service worker starts
+console.log('Background service worker started at:', new Date().toISOString());

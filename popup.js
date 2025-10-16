@@ -39,6 +39,29 @@ async function init() {
   }
 }
 
+// Helper function to send message with retry
+async function sendMessageWithRetry(message, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const response = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(message, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(response);
+          }
+        });
+      });
+      return response;
+    } catch (error) {
+      console.error(`Attempt ${i + 1} failed:`, error);
+      if (i === maxRetries - 1) throw error;
+      // Wait before retrying
+      await new Promise(resolve => setTimeout(resolve, 100 * (i + 1)));
+    }
+  }
+}
+
 // Load metadata cache from storage
 async function loadMetadataCache() {
   try {
@@ -172,8 +195,6 @@ window.nativeShare = async function(shortUrl, title, description, imageUrl) {
         url: shortUrl
       };
       
-      // Note: Image sharing is limited in Web Share API
-      // Most platforms will fetch metadata from the URL automatically
       await navigator.share(shareData);
     } catch (err) {
       if (err.name !== 'AbortError') {
@@ -186,7 +207,7 @@ window.nativeShare = async function(shortUrl, title, description, imageUrl) {
   }
 }
 
-// Enhanced metadata fetching using background script
+// Enhanced metadata fetching with retry logic
 async function fetchPageMetadataFromUrl(originalUrl, useCache = true) {
   try {
     // Check cache first
@@ -197,27 +218,18 @@ async function fetchPageMetadataFromUrl(originalUrl, useCache = true) {
 
     console.log('Requesting metadata from background script for:', originalUrl);
     
-    // Use background script to fetch metadata (has full permissions)
-    return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(
-        { action: 'fetchMetadata', url: originalUrl },
-        response => {
-          if (chrome.runtime.lastError) {
-            console.error('Runtime error:', chrome.runtime.lastError);
-            reject(chrome.runtime.lastError);
-            return;
-          }
-          
-          if (response && response.success) {
-            const metadata = response.metadata;
-            saveMetadataToCache(originalUrl, metadata);
-            resolve(metadata);
-          } else {
-            reject(new Error(response?.error || 'Failed to fetch metadata'));
-          }
-        }
-      );
+    const response = await sendMessageWithRetry({ 
+      action: 'fetchMetadata', 
+      url: originalUrl 
     });
+    
+    if (response && response.success) {
+      const metadata = response.metadata;
+      await saveMetadataToCache(originalUrl, metadata);
+      return metadata;
+    } else {
+      throw new Error(response?.error || 'Failed to fetch metadata');
+    }
   } catch (error) {
     console.error('Error fetching metadata:', error);
     return {
@@ -279,8 +291,26 @@ function extractDomain(url) {
   }
 }
 
-// Shorten URL using multiple services
+// Enhanced URL shortening with direct API calls as fallback
 async function shortenUrl(url) {
+  // Try background script first
+  try {
+    console.log('Attempting to shorten via background script...');
+    const response = await sendMessageWithRetry({ 
+      action: 'shortenUrl', 
+      url: url 
+    });
+    
+    if (response && response.success) {
+      console.log('Successfully shortened via background script:', response.shortUrl);
+      return response.shortUrl;
+    }
+  } catch (error) {
+    console.error('Background script failed, trying direct API calls:', error);
+  }
+
+  // Fallback: Direct API calls from popup
+  console.log('Attempting direct API calls from popup...');
   const services = [
     {
       name: 'is.gd',
@@ -301,7 +331,7 @@ async function shortenUrl(url) {
 
   for (const service of services) {
     try {
-      console.log(`Trying ${service.name}...`);
+      console.log(`Trying ${service.name} directly from popup...`);
       const response = await fetch(service.url, {
         method: service.method,
         headers: {
@@ -340,6 +370,8 @@ async function shortenCurrentTab() {
 
     currentOriginalUrl = tab.url;
     
+    console.log('Current tab URL:', currentOriginalUrl);
+    
     // Fetch metadata from ORIGINAL URL
     let metadata = await fetchPageMetadataFromUrl(currentOriginalUrl);
     
@@ -354,7 +386,9 @@ async function shortenCurrentTab() {
     console.log('Using metadata from ORIGINAL URL:', currentMetadata);
     
     // Shorten URL
+    console.log('Starting URL shortening...');
     currentShortUrl = await shortenUrl(currentOriginalUrl);
+    console.log('URL shortened successfully:', currentShortUrl);
     
     const domain = extractDomain(currentOriginalUrl);
     displayResult(currentShortUrl, currentPageTitle, currentOriginalUrl, domain, currentMetadata);
@@ -362,7 +396,7 @@ async function shortenCurrentTab() {
     await saveToHistory(currentOriginalUrl, currentShortUrl, currentPageTitle, currentMetadata);
     
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error in shortenCurrentTab:', error);
     showError(error.message || 'Failed to shorten URL');
   }
 }
@@ -549,6 +583,9 @@ function shareUrl(platform) {
     
     // Threads - includes title and description
     threads: `https://www.threads.net/intent/post?text=${encodeURIComponent(title + '\n\n' + shortUrl + (description ? '\n\n' + description : ''))}`,
+    
+    // OMN placeholder
+    omn: `https://omn.com/share?url=${url}&text=${text}`,
     
     // QR Code
     qr: () => window.showQRModal(shortUrl),
