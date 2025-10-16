@@ -56,7 +56,6 @@ async function sendMessageWithRetry(message, maxRetries = 3) {
     } catch (error) {
       console.error(`Attempt ${i + 1} failed:`, error);
       if (i === maxRetries - 1) throw error;
-      // Wait before retrying
       await new Promise(resolve => setTimeout(resolve, 100 * (i + 1)));
     }
   }
@@ -207,13 +206,17 @@ window.nativeShare = async function(shortUrl, title, description, imageUrl) {
   }
 }
 
-// Enhanced metadata fetching with retry logic
+// ENHANCED: Fetch metadata with better error handling and caching
 async function fetchPageMetadataFromUrl(originalUrl, useCache = true) {
   try {
-    // Check cache first
+    // Check cache first (valid for 1 hour)
     if (useCache && metadataCache[originalUrl]) {
-      console.log('Using cached metadata for:', originalUrl);
-      return metadataCache[originalUrl];
+      const cached = metadataCache[originalUrl];
+      const cacheAge = Date.now() - (cached.cachedAt || 0);
+      if (cacheAge < 3600000) { // 1 hour
+        console.log('Using cached metadata for:', originalUrl);
+        return cached;
+      }
     }
 
     console.log('Requesting metadata from background script for:', originalUrl);
@@ -232,44 +235,16 @@ async function fetchPageMetadataFromUrl(originalUrl, useCache = true) {
     }
   } catch (error) {
     console.error('Error fetching metadata:', error);
+    
+    // Return minimal fallback
     return {
       title: 'Untitled Page',
       description: '',
       siteName: '',
       image: '',
-      favicon: ''
+      favicon: '',
+      url: originalUrl
     };
-  }
-}
-
-// Fetch page title using content script (faster fallback)
-async function fetchPageTitle(tabId) {
-  try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: tabId },
-      func: () => {
-        const getMetaContent = (selectors) => {
-          for (const selector of selectors) {
-            const element = document.querySelector(selector);
-            if (element) {
-              return element.content || element.textContent || element.href;
-            }
-          }
-          return '';
-        };
-
-        return getMetaContent([
-          'meta[property="og:title"]',
-          'meta[name="twitter:title"]',
-          'meta[name="title"]'
-        ]) || document.title || 'Untitled Page';
-      }
-    });
-
-    return results?.[0]?.result || 'Untitled Page';
-  } catch (error) {
-    console.error('Error fetching page title:', error);
-    return 'Untitled Page';
   }
 }
 
@@ -278,8 +253,19 @@ function extractDomain(url) {
   try {
     const urlObj = new URL(url);
     const hostname = urlObj.hostname.replace('www.', '');
-    const parts = hostname.split('.');
     
+    // Special cases
+    if (hostname.includes('youtube.com') || hostname.includes('youtu.be')) {
+      return 'YT';
+    }
+    if (hostname.includes('facebook.com')) {
+      return 'FB';
+    }
+    if (hostname.includes('twitter.com') || hostname.includes('x.com')) {
+      return 'X';
+    }
+    
+    const parts = hostname.split('.');
     if (parts.length > 2) {
       return parts[parts.length - 2].toUpperCase().substring(0, 3);
     } else if (parts.length >= 1) {
@@ -291,9 +277,48 @@ function extractDomain(url) {
   }
 }
 
+// Get logo color based on domain
+function getDomainColor(url) {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    
+    // Special colors for popular sites
+    if (hostname.includes('youtube.com') || hostname.includes('youtu.be')) {
+      return '#FF0000';
+    }
+    if (hostname.includes('facebook.com')) {
+      return '#1877F2';
+    }
+    if (hostname.includes('twitter.com') || hostname.includes('x.com')) {
+      return '#000000';
+    }
+    if (hostname.includes('instagram.com')) {
+      return '#E4405F';
+    }
+    if (hostname.includes('linkedin.com')) {
+      return '#0A66C2';
+    }
+    if (hostname.includes('reddit.com')) {
+      return '#FF4500';
+    }
+    if (hostname.includes('github.com')) {
+      return '#181717';
+    }
+    
+    // Default random colors
+    const colors = ['#bb1919', '#1976d2', '#388e3c', '#f57c00', '#7b1fa2', '#c2185b'];
+    let hash = 0;
+    for (let i = 0; i < hostname.length; i++) {
+      hash = hostname.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return colors[Math.abs(hash) % colors.length];
+  } catch (error) {
+    return '#bb1919';
+  }
+}
+
 // Enhanced URL shortening with direct API calls as fallback
 async function shortenUrl(url) {
-  // Try background script first
   try {
     console.log('Attempting to shorten via background script...');
     const response = await sendMessageWithRetry({ 
@@ -309,7 +334,6 @@ async function shortenUrl(url) {
     console.error('Background script failed, trying direct API calls:', error);
   }
 
-  // Fallback: Direct API calls from popup
   console.log('Attempting direct API calls from popup...');
   const services = [
     {
@@ -375,13 +399,8 @@ async function shortenCurrentTab() {
     // Fetch metadata from ORIGINAL URL
     let metadata = await fetchPageMetadataFromUrl(currentOriginalUrl);
     
-    if (!metadata || !metadata.title) {
-      currentPageTitle = await fetchPageTitle(tab.id);
-      currentMetadata = metadata || {};
-    } else {
-      currentPageTitle = metadata.title || tab.title || 'Untitled Page';
-      currentMetadata = metadata;
-    }
+    currentPageTitle = metadata.title || tab.title || 'Untitled Page';
+    currentMetadata = metadata;
     
     console.log('Using metadata from ORIGINAL URL:', currentMetadata);
     
@@ -391,7 +410,8 @@ async function shortenCurrentTab() {
     console.log('URL shortened successfully:', currentShortUrl);
     
     const domain = extractDomain(currentOriginalUrl);
-    displayResult(currentShortUrl, currentPageTitle, currentOriginalUrl, domain, currentMetadata);
+    const color = getDomainColor(currentOriginalUrl);
+    displayResult(currentShortUrl, currentPageTitle, currentOriginalUrl, domain, currentMetadata, color);
     
     await saveToHistory(currentOriginalUrl, currentShortUrl, currentPageTitle, currentMetadata);
     
@@ -437,7 +457,7 @@ function showError(message) {
 }
 
 // Display result
-function displayResult(shortUrl, title, originalUrl, domain, metadata) {
+function displayResult(shortUrl, title, originalUrl, domain, metadata, color) {
   loadingState.style.display = 'none';
   errorState.style.display = 'none';
   mainCard.style.display = 'block';
@@ -452,17 +472,17 @@ function displayResult(shortUrl, title, originalUrl, domain, metadata) {
   originalUrlEl.title = originalUrl;
   
   if (metadata && metadata.favicon) {
-    displayFaviconLogo(metadata.favicon, domain);
+    displayFaviconLogo(metadata.favicon, domain, color);
   } else {
-    displayTextLogo(domain);
+    displayTextLogo(domain, color);
   }
 }
 
 // Display favicon logo with error handling
-function displayFaviconLogo(faviconUrl, domain) {
+function displayFaviconLogo(faviconUrl, domain, fallbackColor) {
   const img = new Image();
   const timeout = setTimeout(() => {
-    displayTextLogo(domain);
+    displayTextLogo(domain, fallbackColor);
   }, 3000);
   
   img.onload = () => {
@@ -479,25 +499,27 @@ function displayFaviconLogo(faviconUrl, domain) {
     faviconImg.style.width = '100%';
     faviconImg.style.height = '100%';
     faviconImg.style.objectFit = 'contain';
-    faviconImg.onerror = () => displayTextLogo(domain);
+    faviconImg.onerror = () => displayTextLogo(domain, fallbackColor);
     
     sourceLogoEl.appendChild(faviconImg);
   };
   
   img.onerror = () => {
     clearTimeout(timeout);
-    displayTextLogo(domain);
+    displayTextLogo(domain, fallbackColor);
   };
   
   img.src = faviconUrl;
 }
 
 // Display text-based logo
-function displayTextLogo(domain) {
+function displayTextLogo(domain, color) {
   sourceLogoEl.innerHTML = domain;
-  const colors = ['#bb1919', '#1976d2', '#388e3c', '#f57c00', '#7b1fa2', '#c2185b'];
-  sourceLogoEl.style.background = colors[Math.floor(Math.random() * colors.length)];
+  sourceLogoEl.style.background = color || '#bb1919';
   sourceLogoEl.style.padding = '0';
+  sourceLogoEl.style.display = 'flex';
+  sourceLogoEl.style.alignItems = 'center';
+  sourceLogoEl.style.justifyContent = 'center';
 }
 
 // Copy to clipboard
@@ -675,6 +697,8 @@ async function saveToHistory(longUrl, shortUrl, title, metadata) {
       history[existingIndex].description = metadata?.description || null;
       history[existingIndex].siteName = metadata?.siteName || null;
       history[existingIndex].image = metadata?.image || null;
+      history[existingIndex].video = metadata?.video || null;
+      history[existingIndex].channel = metadata?.channel || null;
       const [item] = history.splice(existingIndex, 1);
       history.unshift(item);
     } else {
@@ -688,6 +712,8 @@ async function saveToHistory(longUrl, shortUrl, title, metadata) {
         description: metadata?.description || null,
         siteName: metadata?.siteName || null,
         image: metadata?.image || null,
+        video: metadata?.video || null,
+        channel: metadata?.channel || null,
         clickCount: 1
       });
     }
@@ -784,19 +810,19 @@ function createHistoryCard(item) {
   card.className = 'card';
   
   const domain = extractDomain(item.longUrl);
+  const color = getDomainColor(item.longUrl);
   const date = new Date(item.timestamp);
   const timeStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
   const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const dateStr = `${String(date.getDate()).padStart(2, '0')} ${months[date.getMonth()]} ${date.getFullYear()}`;
   
   const logoId = `history-logo-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  const initialColor = getRandomColor();
   const displayTitle = item.title || 'Untitled Page';
   const clickCount = item.clickCount || 1;
   
   card.innerHTML = `
     <div class="source-header">
-      <div class="source-logo" id="${logoId}" style="background: ${initialColor}">${domain}</div>
+      <div class="source-logo" id="${logoId}" style="background: ${color}">${domain}</div>
       <div class="source-info">
         <div class="short-url" title="Click to copy">${item.shortUrl}</div>
       </div>
@@ -835,7 +861,7 @@ function createHistoryCard(item) {
   // Load favicon asynchronously
   if (item.favicon) {
     setTimeout(() => {
-      displayHistoryFavicon(logoId, item.favicon, domain, initialColor);
+      displayHistoryFavicon(logoId, item.favicon, domain, color);
     }, 100);
   }
   
@@ -868,11 +894,13 @@ function createHistoryCard(item) {
           description: item.description,
           siteName: item.siteName,
           image: item.image,
-          favicon: item.favicon
+          favicon: item.favicon,
+          video: item.video,
+          channel: item.channel
         };
         
         showMainView();
-        displayResult(currentShortUrl, currentPageTitle, currentOriginalUrl, domain, currentMetadata);
+        displayResult(currentShortUrl, currentPageTitle, currentOriginalUrl, domain, currentMetadata, color);
       } else if (action === 'delete') {
         deleteHistoryItem(item);
       }
@@ -951,10 +979,4 @@ async function deleteHistoryItem(itemToDelete) {
   } catch (error) {
     console.error('Error deleting history item:', error);
   }
-}
-
-// Get random color for logo
-function getRandomColor() {
-  const colors = ['#bb1919', '#1976d2', '#388e3c', '#f57c00', '#7b1fa2', '#c2185b'];
-  return colors[Math.floor(Math.random() * colors.length)];
-}
+} 

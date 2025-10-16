@@ -55,13 +55,18 @@ async function shortenUrl(url) {
   throw new Error('All URL shortening services failed');
 }
 
-// Fetch COMPLETE page metadata from ORIGINAL URL (runs in background with full permissions)
+// ENHANCED: Fetch COMPLETE page metadata from ORIGINAL URL with special YouTube handling
 async function fetchPageMetadataFromUrl(url) {
   try {
     console.log('Background: Fetching metadata from ORIGINAL URL:', url);
     
+    // Special handling for YouTube URLs
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+      return await fetchYouTubeMetadata(url);
+    }
+    
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // Increased timeout
     
     const response = await fetch(url, { 
       method: 'GET',
@@ -69,7 +74,10 @@ async function fetchPageMetadataFromUrl(url) {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
-        'Cache-Control': 'no-cache'
+        'Cache-Control': 'no-cache',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none'
       },
       signal: controller.signal
     });
@@ -89,49 +97,61 @@ async function fetchPageMetadataFromUrl(url) {
       for (const selector of selectors) {
         const element = doc.querySelector(selector);
         if (element) {
-          return element.content || element.textContent || element.href;
+          const content = element.content || element.getAttribute('content') || element.textContent || element.href;
+          if (content && content.trim()) {
+            return content.trim();
+          }
         }
       }
       return '';
     };
 
-    // Get title
+    // Get title with priority order
     const title = getMetaContent([
       'meta[property="og:title"]',
       'meta[name="twitter:title"]',
-      'meta[name="title"]'
-    ]) || doc.querySelector('title')?.textContent || 'Untitled Page';
+      'meta[name="title"]',
+      'meta[property="title"]',
+      'meta[itemprop="name"]'
+    ]) || doc.querySelector('title')?.textContent?.trim() || 'Untitled Page';
 
-    // Get description
+    // Get description with multiple fallbacks
     const description = getMetaContent([
       'meta[property="og:description"]',
       'meta[name="twitter:description"]',
-      'meta[name="description"]'
+      'meta[name="description"]',
+      'meta[property="description"]',
+      'meta[itemprop="description"]'
     ]);
 
     // Get site name
     const siteName = getMetaContent([
       'meta[property="og:site_name"]',
-      'meta[name="application-name"]'
+      'meta[name="application-name"]',
+      'meta[name="apple-mobile-web-app-title"]'
     ]);
 
-    // Get image
+    // Get image with multiple sources
     const image = getMetaContent([
       'meta[property="og:image"]',
       'meta[property="og:image:url"]',
+      'meta[property="og:image:secure_url"]',
       'meta[name="twitter:image"]',
-      'meta[name="twitter:image:src"]'
+      'meta[name="twitter:image:src"]',
+      'meta[itemprop="image"]',
+      'link[rel="image_src"]'
     ]);
 
-    // Get favicon
+    // Get favicon with multiple fallbacks
     let favicon = getMetaContent([
       'link[rel="icon"]',
       'link[rel="shortcut icon"]',
       'link[rel="apple-touch-icon"]',
-      'link[rel="apple-touch-icon-precomposed"]'
+      'link[rel="apple-touch-icon-precomposed"]',
+      'meta[itemprop="image"]'
     ]);
 
-    // Resolve relative favicon URLs to absolute URLs
+    // Resolve relative URLs to absolute URLs
     if (favicon && !favicon.startsWith('http')) {
       try {
         favicon = new URL(favicon, url).href;
@@ -141,18 +161,27 @@ async function fetchPageMetadataFromUrl(url) {
       }
     }
 
-    // Fallback to standard favicon location if not found
+    // Fallback to standard favicon location
     if (!favicon) {
       const urlObj = new URL(url);
       favicon = `${urlObj.origin}/favicon.ico`;
     }
 
+    // Get video metadata if available
+    const video = getMetaContent([
+      'meta[property="og:video"]',
+      'meta[property="og:video:url"]',
+      'meta[property="og:video:secure_url"]'
+    ]);
+
     const metadata = {
-      title: title.trim(),
-      description: description?.trim() || '',
-      siteName: siteName?.trim() || '',
+      title: cleanText(title),
+      description: cleanText(description) || '',
+      siteName: cleanText(siteName) || '',
       image: image || '',
-      favicon: favicon
+      favicon: favicon,
+      video: video || '',
+      url: url
     };
 
     console.log('Background: Fetched complete metadata:', metadata);
@@ -164,9 +193,144 @@ async function fetchPageMetadataFromUrl(url) {
       description: '',
       siteName: '',
       image: '',
-      favicon: ''
+      favicon: '',
+      video: '',
+      url: url
     };
   }
+}
+
+// ENHANCED: Special YouTube metadata fetcher
+async function fetchYouTubeMetadata(url) {
+  try {
+    console.log('Fetching YouTube metadata for:', url);
+    
+    // Extract video ID from various YouTube URL formats
+    let videoId = null;
+    
+    if (url.includes('youtube.com/watch')) {
+      const urlParams = new URLSearchParams(new URL(url).search);
+      videoId = urlParams.get('v');
+    } else if (url.includes('youtu.be/')) {
+      videoId = url.split('youtu.be/')[1]?.split('?')[0]?.split('&')[0];
+    } else if (url.includes('youtube.com/embed/')) {
+      videoId = url.split('youtube.com/embed/')[1]?.split('?')[0];
+    }
+    
+    if (!videoId) {
+      throw new Error('Could not extract YouTube video ID');
+    }
+    
+    console.log('YouTube Video ID:', videoId);
+    
+    // Fetch the YouTube page
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
+    });
+    
+    const html = await response.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    
+    const getMetaContent = (selectors) => {
+      for (const selector of selectors) {
+        const element = doc.querySelector(selector);
+        if (element) {
+          const content = element.content || element.getAttribute('content');
+          if (content && content.trim()) {
+            return content.trim();
+          }
+        }
+      }
+      return '';
+    };
+    
+    // Extract title
+    const title = getMetaContent([
+      'meta[property="og:title"]',
+      'meta[name="twitter:title"]',
+      'meta[name="title"]'
+    ]) || doc.querySelector('title')?.textContent?.replace(' - YouTube', '')?.trim() || 'YouTube Video';
+    
+    // Extract description
+    const description = getMetaContent([
+      'meta[property="og:description"]',
+      'meta[name="twitter:description"]',
+      'meta[name="description"]'
+    ]);
+    
+    // YouTube thumbnail (high quality)
+    const thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+    
+    // Alternative thumbnail sizes as fallback
+    const thumbnailMedium = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+    
+    // YouTube favicon
+    const favicon = 'https://www.youtube.com/s/desktop/d743f786/img/favicon_144x144.png';
+    
+    // Extract channel/author info
+    const channel = getMetaContent([
+      'meta[name="author"]',
+      'link[itemprop="name"]'
+    ]) || 'YouTube';
+    
+    const metadata = {
+      title: cleanText(title),
+      description: cleanText(description) || '',
+      siteName: 'YouTube',
+      image: thumbnail,
+      favicon: favicon,
+      video: url,
+      url: url,
+      channel: cleanText(channel),
+      videoId: videoId,
+      thumbnailMedium: thumbnailMedium
+    };
+    
+    console.log('YouTube metadata extracted:', metadata);
+    return metadata;
+    
+  } catch (error) {
+    console.error('Error fetching YouTube metadata:', error);
+    
+    // Fallback with basic info
+    let videoId = null;
+    try {
+      if (url.includes('youtube.com/watch')) {
+        const urlParams = new URLSearchParams(new URL(url).search);
+        videoId = urlParams.get('v');
+      } else if (url.includes('youtu.be/')) {
+        videoId = url.split('youtu.be/')[1]?.split('?')[0];
+      }
+    } catch (e) {
+      console.error('Could not extract video ID:', e);
+    }
+    
+    return {
+      title: 'YouTube Video',
+      description: '',
+      siteName: 'YouTube',
+      image: videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : '',
+      favicon: 'https://www.youtube.com/s/desktop/d743f786/img/favicon_144x144.png',
+      video: url,
+      url: url,
+      videoId: videoId || ''
+    };
+  }
+}
+
+// Clean text helper
+function cleanText(text) {
+  if (!text) return '';
+  return text
+    .replace(/\s+/g, ' ')
+    .replace(/[\r\n\t]/g, ' ')
+    .trim()
+    .substring(0, 500); // Limit length
 }
 
 // Track short URL clicks
@@ -228,7 +392,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-// FIXED: Message listener with proper async handling
+// Message listener with proper async handling
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Background received message:', request.action);
   
