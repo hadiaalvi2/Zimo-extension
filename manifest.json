@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "URL Shortener",
   "version": "1.0",
-  "description": "Shorten URLs with one click",
+  "description": "Shorten URLs with one click and rich previews",
   "permissions": [
     "activeTab",
     "scripting",
@@ -22,6 +22,9 @@
     "https://discord.com/*",
     "https://bsky.app/*",
     "https://www.threads.net/*",
+    "https://api.qrserver.com/*",
+    "https://*.youtube.com/*",
+    "https://youtu.be/*",
     "<all_urls>"
   ],
   "background": {

@@ -206,7 +206,7 @@ window.nativeShare = async function(shortUrl, title, description, imageUrl) {
   }
 }
 
-// ENHANCED: Fetch metadata with better error handling and caching
+// ENHANCED: Fetch metadata from original URL
 async function fetchPageMetadataFromUrl(originalUrl, useCache = true) {
   try {
     // Check cache first (valid for 1 hour)
@@ -228,6 +228,7 @@ async function fetchPageMetadataFromUrl(originalUrl, useCache = true) {
     
     if (response && response.success) {
       const metadata = response.metadata;
+      console.log('Received metadata from background:', metadata);
       await saveMetadataToCache(originalUrl, metadata);
       return metadata;
     } else {
@@ -243,7 +244,8 @@ async function fetchPageMetadataFromUrl(originalUrl, useCache = true) {
       siteName: '',
       image: '',
       favicon: '',
-      url: originalUrl
+      url: originalUrl,
+      type: 'website'
     };
   }
 }
@@ -263,6 +265,21 @@ function extractDomain(url) {
     }
     if (hostname.includes('twitter.com') || hostname.includes('x.com')) {
       return 'X';
+    }
+    if (hostname.includes('instagram.com')) {
+      return 'IG';
+    }
+    if (hostname.includes('linkedin.com')) {
+      return 'IN';
+    }
+    if (hostname.includes('reddit.com')) {
+      return 'RD';
+    }
+    if (hostname.includes('github.com')) {
+      return 'GH';
+    }
+    if (hostname.includes('tiktok.com')) {
+      return 'TT';
     }
     
     const parts = hostname.split('.');
@@ -304,9 +321,21 @@ function getDomainColor(url) {
     if (hostname.includes('github.com')) {
       return '#181717';
     }
+    if (hostname.includes('tiktok.com')) {
+      return '#000000';
+    }
+    if (hostname.includes('whatsapp.com')) {
+      return '#25D366';
+    }
+    if (hostname.includes('telegram.org')) {
+      return '#0088CC';
+    }
+    if (hostname.includes('discord.com')) {
+      return '#5865F2';
+    }
     
     // Default random colors
-    const colors = ['#bb1919', '#1976d2', '#388e3c', '#f57c00', '#7b1fa2', '#c2185b'];
+    const colors = ['#bb1919', '#1976d2', '#388e3c', '#f57c00', '#7b1fa2', '#c2185b', '#0097A7', '#7B1FA2'];
     let hash = 0;
     for (let i = 0; i < hostname.length; i++) {
       hash = hostname.charCodeAt(i) + ((hash << 5) - hash);
@@ -317,7 +346,7 @@ function getDomainColor(url) {
   }
 }
 
-// Enhanced URL shortening with direct API calls as fallback
+// Enhanced URL shortening function
 async function shortenUrl(url) {
   try {
     console.log('Attempting to shorten via background script...');
@@ -378,7 +407,20 @@ async function shortenUrl(url) {
   throw new Error('All URL shortening services failed. Please try again later.');
 }
 
-// Main function to shorten current tab
+// CRITICAL FIX: Wait for shortened URL to be indexed by sharing platforms
+async function waitForShortUrlIndexing(shortUrl, maxWaitTime = 3000) {
+  console.log('Waiting for short URL to be indexed...', shortUrl);
+  
+  // Give the URL shortening service time to set up the redirect properly
+  return new Promise(resolve => {
+    setTimeout(() => {
+      console.log('Short URL should now be ready for sharing');
+      resolve();
+    }, maxWaitTime);
+  });
+}
+
+// ENHANCED: Main function to shorten current tab with metadata
 async function shortenCurrentTab() {
   try {
     showLoading();
@@ -396,24 +438,40 @@ async function shortenCurrentTab() {
     
     console.log('Current tab URL:', currentOriginalUrl);
     
-    // Fetch metadata from ORIGINAL URL
+    // STEP 1: Fetch metadata from ORIGINAL URL FIRST
+    console.log('Step 1: Fetching metadata from original URL...');
     let metadata = await fetchPageMetadataFromUrl(currentOriginalUrl);
     
     currentPageTitle = metadata.title || tab.title || 'Untitled Page';
     currentMetadata = metadata;
     
-    console.log('Using metadata from ORIGINAL URL:', currentMetadata);
+    console.log('Step 1 Complete - Metadata fetched:', {
+      title: currentMetadata.title,
+      description: currentMetadata.description?.substring(0, 50),
+      image: currentMetadata.image,
+      favicon: currentMetadata.favicon,
+      type: currentMetadata.type
+    });
     
-    // Shorten URL
-    console.log('Starting URL shortening...');
+    // STEP 2: Shorten URL
+    console.log('Step 2: Shortening URL...');
     currentShortUrl = await shortenUrl(currentOriginalUrl);
-    console.log('URL shortened successfully:', currentShortUrl);
+    console.log('Step 2 Complete - URL shortened:', currentShortUrl);
     
+    // STEP 3: Wait for URL shortening service to index the redirect
+    console.log('Step 3: Waiting for short URL to be indexed...');
+    await waitForShortUrlIndexing(currentShortUrl, 2000);
+    console.log('Step 3 Complete - Short URL should be ready');
+    
+    // STEP 4: Display result with metadata
     const domain = extractDomain(currentOriginalUrl);
     const color = getDomainColor(currentOriginalUrl);
     displayResult(currentShortUrl, currentPageTitle, currentOriginalUrl, domain, currentMetadata, color);
     
+    // STEP 5: Save to history with complete metadata
+    console.log('Step 4: Saving to history with metadata...');
     await saveToHistory(currentOriginalUrl, currentShortUrl, currentPageTitle, currentMetadata);
+    console.log('Step 4 Complete - Saved to history');
     
   } catch (error) {
     console.error('Error in shortenCurrentTab:', error);
@@ -476,6 +534,14 @@ function displayResult(shortUrl, title, originalUrl, domain, metadata, color) {
   } else {
     displayTextLogo(domain, color);
   }
+  
+  console.log('Display complete with metadata:', {
+    shortUrl,
+    title,
+    hasImage: !!metadata?.image,
+    hasDescription: !!metadata?.description,
+    type: metadata?.type
+  });
 }
 
 // Display favicon logo with error handling
@@ -559,7 +625,7 @@ function showCopyFeedback() {
   }, 2000);
 }
 
-// ENHANCED Share URL with Rich Metadata
+// CRITICAL FIX: Enhanced share function - shortened URLs will redirect and platforms will fetch metadata
 function shareUrl(platform) {
   const shortUrl = currentShortUrl;
   const originalUrl = currentOriginalUrl;
@@ -567,52 +633,64 @@ function shareUrl(platform) {
   const description = currentMetadata.description || '';
   const image = currentMetadata.image || '';
   
-  // Create rich text with metadata for better sharing
-  const richText = `${title}${description ? '\n\n' + description : ''}`;
+  console.log('Sharing short URL - platforms will fetch metadata after redirect:', {
+    platform,
+    shortUrl,
+    originalUrl,
+    title,
+    description: description.substring(0, 50),
+    image,
+    type: currentMetadata.type
+  });
+  
+  // IMPORTANT: When platforms fetch shortened URLs:
+  // 1. They follow the redirect to the original URL
+  // 2. They scrape Open Graph metadata from the original URL
+  // 3. Rich previews are generated from the original page's metadata
   
   const url = encodeURIComponent(shortUrl);
   const text = encodeURIComponent(title);
-  const desc = encodeURIComponent(description);
-  const fullText = encodeURIComponent(richText);
+  const fullText = encodeURIComponent(`${title}${description ? '\n\n' + description : ''}`);
   
   const shareUrls = {
-    // WhatsApp - includes title and description
-    whatsapp: `https://wa.me/?text=${encodeURIComponent(title + '\n' + shortUrl + (description ? '\n\n' + description : ''))}`,
+    // WhatsApp - Will fetch metadata from redirected URL
+    whatsapp: `https://wa.me/?text=${url}`,
     
-    // Telegram - includes title and URL
-    telegram: `https://t.me/share/url?url=${url}&text=${fullText}`,
+    // Telegram - Will fetch metadata from redirected URL  
+    telegram: `https://t.me/share/url?url=${url}&text=${text}`,
     
-    // Facebook - only URL (Facebook fetches metadata automatically)
+    // Facebook - Will fetch metadata from redirected URL
     facebook: `https://www.facebook.com/sharer/sharer.php?u=${url}`,
     
-    // Twitter/X - includes title and description in tweet
-    twitter: `https://twitter.com/intent/tweet?url=${url}&text=${fullText}`,
+    // Twitter/X - Will fetch metadata from redirected URL
+    twitter: `https://twitter.com/intent/tweet?url=${url}&text=${text}`,
     
-    // Reddit - includes title
+    // Reddit - Will fetch metadata from redirected URL
     reddit: `https://reddit.com/submit?url=${url}&title=${text}`,
     
-    // LinkedIn - URL only (LinkedIn fetches metadata)
+    // LinkedIn - Will fetch metadata from redirected URL
     linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${url}`,
     
-    // Email - rich text format
-    email: `mailto:?subject=${text}&body=${encodeURIComponent(title + '\n\n' + (description || '') + '\n\n' + shortUrl + '\n\nView original: ' + originalUrl)}`,
+    // Email - Include both short URL and metadata
+    email: `mailto:?subject=${text}&body=${encodeURIComponent(
+      title + 
+      (description ? '\n\n' + description : '') + 
+      '\n\n' + shortUrl
+    )}`,
     
-    // Discord - paste the short URL (Discord will fetch metadata)
+    // Discord - Will fetch metadata from redirected URL
     discord: `https://discord.com/channels/@me`,
     
-    // BlueSky - includes title and description
-    bluesky: `https://bsky.app/intent/compose?text=${encodeURIComponent(title + '\n\n' + shortUrl + (description ? '\n\n' + description : ''))}`,
+    // BlueSky - Include title and short URL
+    bluesky: `https://bsky.app/intent/compose?text=${encodeURIComponent(title + '\n\n' + shortUrl)}`,
     
-    // Threads - includes title and description
-    threads: `https://www.threads.net/intent/post?text=${encodeURIComponent(title + '\n\n' + shortUrl + (description ? '\n\n' + description : ''))}`,
-    
-    // OMN placeholder
-    omn: `https://omn.com/share?url=${url}&text=${text}`,
+    // Threads - Include title and short URL
+    threads: `https://www.threads.net/intent/post?text=${encodeURIComponent(title + '\n\n' + shortUrl)}`,
     
     // QR Code
     qr: () => window.showQRModal(shortUrl),
     
-    // Native Share with rich metadata
+    // Native Share with rich data
     native: () => window.nativeShare(shortUrl, title, description, image)
   };
   
@@ -680,7 +758,7 @@ function updateScrollButtons() {
   scrollRightBtn.disabled = scrollLeft + clientWidth >= scrollWidth - 1;
 }
 
-// Save to history with complete metadata
+// ENHANCED: Save to history with complete metadata from original URL
 async function saveToHistory(longUrl, shortUrl, title, metadata) {
   try {
     const result = await chrome.storage.local.get(['urlHistory', 'urlClickCount']);
@@ -689,33 +767,30 @@ async function saveToHistory(longUrl, shortUrl, title, metadata) {
     
     const existingIndex = history.findIndex(item => item.shortUrl === shortUrl);
     
+    const historyItem = {
+      longUrl,
+      shortUrl,
+      title,
+      timestamp: new Date().toISOString(),
+      favicon: metadata?.favicon || null,
+      description: metadata?.description || null,
+      siteName: metadata?.siteName || null,
+      image: metadata?.image || null,
+      video: metadata?.video || null,
+      channel: metadata?.channel || null,
+      type: metadata?.type || 'website',
+      clickCount: 1
+    };
+    
     if (existingIndex !== -1) {
       clickCount[shortUrl] = (clickCount[shortUrl] || 1) + 1;
-      history[existingIndex].clickCount = clickCount[shortUrl];
-      history[existingIndex].title = title;
-      history[existingIndex].favicon = metadata?.favicon || null;
-      history[existingIndex].description = metadata?.description || null;
-      history[existingIndex].siteName = metadata?.siteName || null;
-      history[existingIndex].image = metadata?.image || null;
-      history[existingIndex].video = metadata?.video || null;
-      history[existingIndex].channel = metadata?.channel || null;
+      historyItem.clickCount = clickCount[shortUrl];
+      history[existingIndex] = historyItem;
       const [item] = history.splice(existingIndex, 1);
       history.unshift(item);
     } else {
       clickCount[shortUrl] = 1;
-      history.unshift({
-        longUrl,
-        shortUrl,
-        title,
-        timestamp: new Date().toISOString(),
-        favicon: metadata?.favicon || null,
-        description: metadata?.description || null,
-        siteName: metadata?.siteName || null,
-        image: metadata?.image || null,
-        video: metadata?.video || null,
-        channel: metadata?.channel || null,
-        clickCount: 1
-      });
+      history.unshift(historyItem);
     }
     
     if (history.length > 50) {
@@ -726,7 +801,13 @@ async function saveToHistory(longUrl, shortUrl, title, metadata) {
     }
     
     await chrome.storage.local.set({ urlHistory: history, urlClickCount: clickCount });
-    console.log('History saved with complete metadata');
+    console.log('History saved with complete metadata:', {
+      title: historyItem.title,
+      hasDescription: !!historyItem.description,
+      hasImage: !!historyItem.image,
+      hasFavicon: !!historyItem.favicon,
+      type: historyItem.type
+    });
     
   } catch (error) {
     console.error('Error saving to history:', error);
@@ -896,8 +977,11 @@ function createHistoryCard(item) {
           image: item.image,
           favicon: item.favicon,
           video: item.video,
-          channel: item.channel
+          channel: item.channel,
+          type: item.type
         };
+        
+        console.log('Loaded metadata from history for sharing:', currentMetadata);
         
         showMainView();
         displayResult(currentShortUrl, currentPageTitle, currentOriginalUrl, domain, currentMetadata, color);
@@ -979,4 +1063,63 @@ async function deleteHistoryItem(itemToDelete) {
   } catch (error) {
     console.error('Error deleting history item:', error);
   }
-} 
+}
+
+// Refresh functionality for manual retry
+window.refreshShortUrl = async function() {
+  await shortenCurrentTab();
+};
+
+// Export functionality for history
+window.exportHistory = async function() {
+  try {
+    const result = await chrome.storage.local.get(['urlHistory']);
+    const history = result.urlHistory || [];
+    
+    if (history.length === 0) {
+      alert('No history to export');
+      return;
+    }
+    
+    const csvContent = [
+      ['Short URL', 'Original URL', 'Title', 'Description', 'Site Name', 'Click Count', 'Date'],
+      ...history.map(item => [
+        item.shortUrl,
+        item.longUrl,
+        item.title,
+        item.description || '',
+        item.siteName || '',
+        item.clickCount || 1,
+        new Date(item.timestamp).toLocaleDateString()
+      ])
+    ].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `url-shortener-history-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+  } catch (error) {
+    console.error('Error exporting history:', error);
+    alert('Failed to export history');
+  }
+};
+
+// Clear all history
+window.clearAllHistory = async function() {
+  if (confirm('Are you sure you want to clear all history? This action cannot be undone.')) {
+    try {
+      await chrome.storage.local.set({ urlHistory: [], urlClickCount: {} });
+      await loadHistory();
+      alert('History cleared successfully');
+    } catch (error) {
+      console.error('Error clearing history:', error);
+      alert('Failed to clear history');
+    }
+  }
+};

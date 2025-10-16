@@ -44,6 +44,7 @@ async function shortenUrl(url) {
       if (response.ok) {
         const shortUrl = await response.text();
         if (shortUrl && !shortUrl.includes('Error') && shortUrl.startsWith('http')) {
+          console.log(`${service.name} shortened successfully:`, shortUrl.trim());
           return shortUrl.trim();
         }
       }
@@ -66,7 +67,7 @@ async function fetchPageMetadataFromUrl(url) {
     }
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // Increased timeout
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     
     const response = await fetch(url, { 
       method: 'GET',
@@ -167,6 +168,17 @@ async function fetchPageMetadataFromUrl(url) {
       favicon = `${urlObj.origin}/favicon.ico`;
     }
 
+    // Resolve image URL to absolute if relative
+    let resolvedImage = image;
+    if (image && !image.startsWith('http')) {
+      try {
+        resolvedImage = new URL(image, url).href;
+      } catch (e) {
+        const urlObj = new URL(url);
+        resolvedImage = urlObj.origin + (image.startsWith('/') ? image : '/' + image);
+      }
+    }
+
     // Get video metadata if available
     const video = getMetaContent([
       'meta[property="og:video"]',
@@ -174,33 +186,56 @@ async function fetchPageMetadataFromUrl(url) {
       'meta[property="og:video:secure_url"]'
     ]);
 
+    // Get additional Open Graph metadata
+    const type = getMetaContent(['meta[property="og:type"]']) || 'website';
+    const locale = getMetaContent(['meta[property="og:locale"]']) || 'en_US';
+
     const metadata = {
       title: cleanText(title),
       description: cleanText(description) || '',
       siteName: cleanText(siteName) || '',
-      image: image || '',
+      image: resolvedImage || '',
       favicon: favicon,
       video: video || '',
-      url: url
+      url: url,
+      type: type,
+      locale: locale
     };
 
-    console.log('Background: Fetched complete metadata:', metadata);
+    console.log('Background: Fetched complete metadata:', {
+      title: metadata.title,
+      hasDescription: !!metadata.description,
+      hasImage: !!metadata.image,
+      hasFavicon: !!metadata.favicon,
+      type: metadata.type
+    });
+    
     return metadata;
   } catch (error) {
     console.error('Background: Error fetching metadata from URL:', error);
+    
+    // Try to extract basic info from URL
+    let title = 'Untitled Page';
+    try {
+      const urlObj = new URL(url);
+      title = urlObj.hostname.replace('www.', '');
+    } catch (e) {}
+    
     return {
-      title: 'Untitled Page',
+      title: title,
       description: '',
       siteName: '',
       image: '',
       favicon: '',
       video: '',
-      url: url
+      url: url,
+      type: 'website',
+      locale: 'en_US'
     };
   }
 }
 
-// ENHANCED: Special YouTube metadata fetcher
+// ENHANCED: Special YouTube metadata fetcher with better error handling
 async function fetchYouTubeMetadata(url) {
   try {
     console.log('Fetching YouTube metadata for:', url);
@@ -215,6 +250,8 @@ async function fetchYouTubeMetadata(url) {
       videoId = url.split('youtu.be/')[1]?.split('?')[0]?.split('&')[0];
     } else if (url.includes('youtube.com/embed/')) {
       videoId = url.split('youtube.com/embed/')[1]?.split('?')[0];
+    } else if (url.includes('youtube.com/shorts/')) {
+      videoId = url.split('youtube.com/shorts/')[1]?.split('?')[0];
     }
     
     if (!videoId) {
@@ -223,14 +260,22 @@ async function fetchYouTubeMetadata(url) {
     
     console.log('YouTube Video ID:', videoId);
     
-    // Fetch the YouTube page
+    // Fetch the YouTube page with proper headers
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
     const response = await fetch(url, {
       method: 'GET',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9'
-      }
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache'
+      },
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
     
     const html = await response.text();
     const parser = new DOMParser();
@@ -249,7 +294,7 @@ async function fetchYouTubeMetadata(url) {
       return '';
     };
     
-    // Extract title
+    // Extract title - YouTube specific
     const title = getMetaContent([
       'meta[property="og:title"]',
       'meta[name="twitter:title"]',
@@ -263,11 +308,12 @@ async function fetchYouTubeMetadata(url) {
       'meta[name="description"]'
     ]);
     
-    // YouTube thumbnail (high quality)
+    // YouTube thumbnail (maxresdefault is the highest quality)
     const thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
     
-    // Alternative thumbnail sizes as fallback
-    const thumbnailMedium = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+    // Backup thumbnail URLs
+    const thumbnailHQ = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+    const thumbnailMQ = `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
     
     // YouTube favicon
     const favicon = 'https://www.youtube.com/s/desktop/d743f786/img/favicon_144x144.png';
@@ -288,10 +334,18 @@ async function fetchYouTubeMetadata(url) {
       url: url,
       channel: cleanText(channel),
       videoId: videoId,
-      thumbnailMedium: thumbnailMedium
+      thumbnailHQ: thumbnailHQ,
+      thumbnailMQ: thumbnailMQ,
+      type: 'video.other'
     };
     
-    console.log('YouTube metadata extracted:', metadata);
+    console.log('YouTube metadata extracted:', {
+      title: metadata.title,
+      channel: metadata.channel,
+      videoId: metadata.videoId,
+      hasDescription: !!metadata.description
+    });
+    
     return metadata;
     
   } catch (error) {
@@ -305,6 +359,8 @@ async function fetchYouTubeMetadata(url) {
         videoId = urlParams.get('v');
       } else if (url.includes('youtu.be/')) {
         videoId = url.split('youtu.be/')[1]?.split('?')[0];
+      } else if (url.includes('youtube.com/shorts/')) {
+        videoId = url.split('youtube.com/shorts/')[1]?.split('?')[0];
       }
     } catch (e) {
       console.error('Could not extract video ID:', e);
@@ -318,7 +374,8 @@ async function fetchYouTubeMetadata(url) {
       favicon: 'https://www.youtube.com/s/desktop/d743f786/img/favicon_144x144.png',
       video: url,
       url: url,
-      videoId: videoId || ''
+      videoId: videoId || '',
+      type: 'video.other'
     };
   }
 }
@@ -392,7 +449,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-// Message listener with proper async handling
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Background received message:', request.action);
   
@@ -400,19 +457,36 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   (async () => {
     try {
       if (request.action === 'fetchMetadata') {
-        console.log('Fetching metadata for:', request.url);
+        console.log('Fetching metadata for ORIGINAL URL:', request.url);
         const metadata = await fetchPageMetadataFromUrl(request.url);
+        console.log('Metadata fetched successfully:', {
+          title: metadata.title,
+          hasDescription: !!metadata.description,
+          hasImage: !!metadata.image
+        });
         sendResponse({ success: true, metadata });
       } 
       else if (request.action === 'shortenUrl') {
         console.log('Shortening URL:', request.url);
         const shortUrl = await shortenUrl(request.url);
+        console.log('URL shortened successfully:', shortUrl);
         sendResponse({ success: true, shortUrl });
       } 
       else if (request.action === 'resolveShortUrl') {
         console.log('Resolving short URL:', request.shortUrl);
         const originalUrl = await resolveShortUrl(request.shortUrl);
+        console.log('Short URL resolved to:', originalUrl);
         sendResponse({ success: true, originalUrl });
+      }
+      else if (request.action === 'shortenAndFetchMetadata') {
+        console.log('Shortening and fetching metadata for:', request.url);
+        // First fetch metadata from original URL
+        const metadata = await fetchPageMetadataFromUrl(request.url);
+        console.log('Metadata fetched:', metadata.title);
+        // Then shorten the URL
+        const shortUrl = await shortenUrl(request.url);
+        console.log('URL shortened:', shortUrl);
+        sendResponse({ success: true, shortUrl, metadata });
       }
       else {
         sendResponse({ success: false, error: 'Unknown action: ' + request.action });
@@ -426,7 +500,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true; // Keep channel open for async response
 });
 
-// Resolve shortened URL to original URL
 async function resolveShortUrl(shortUrl) {
   try {
     console.log('Resolving short URL:', shortUrl);
@@ -444,5 +517,19 @@ async function resolveShortUrl(shortUrl) {
   }
 }
 
+async function verifyShortUrlRedirect(shortUrl, expectedOriginalUrl) {
+  try {
+    console.log('Verifying short URL redirect...');
+    const resolvedUrl = await resolveShortUrl(shortUrl);
+    const isProperRedirect = resolvedUrl === expectedOriginalUrl;
+    console.log('Redirect verification:', { shortUrl, resolvedUrl, expectedOriginalUrl, isProperRedirect });
+    return isProperRedirect;
+  } catch (error) {
+    console.error('Error verifying redirect:', error);
+    return false;
+  }
+}
+
 // Log when service worker starts
 console.log('Background service worker started at:', new Date().toISOString());
+console.log('Ready to fetch metadata from ORIGINAL URLs for proper sharing previews');
