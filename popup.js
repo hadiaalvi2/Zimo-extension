@@ -1122,4 +1122,4 @@ window.clearAllHistory = async function() {
       alert('Failed to clear history');
     }
   }
-};
+};  
