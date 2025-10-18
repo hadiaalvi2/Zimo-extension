@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "ZIMO URL Shortener",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Shorten URLs instantly with metadata extraction and history tracking",
   "permissions": [
     "activeTab",
     "storage",
     "scripting",
-    "tabs"
+    "tabs",
+    "contextMenus"
   ],
   "host_permissions": [
     "http://*/*",

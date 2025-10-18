@@ -6,6 +6,7 @@ let currentView = 'main'; // 'main' or 'history'
 
 // Initialize popup
 document.addEventListener('DOMContentLoaded', async () => {
+  console.log('Popup loaded');
   await loadHistory();
   await shortenCurrentTabUrl();
   setupEventListeners();
@@ -48,30 +49,49 @@ async function shortenCurrentTabUrl() {
   showLoading(true);
   
   try {
-    // Get current active tab
+    console.log('Getting current tab...');
+    
+    // Get current active tab with timeout
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     
     if (!tab || !tab.url) {
       throw new Error('Could not get current tab URL');
     }
 
+    console.log('Current tab:', {
+      url: tab.url,
+      title: tab.title,
+      favIconUrl: tab.favIconUrl
+    });
+
+    // Check if URL is valid for shortening
+    if (!tab.url.startsWith('http://') && !tab.url.startsWith('https://')) {
+      throw new Error('Cannot shorten this type of URL (chrome://, file://, etc.)');
+    }
+
+    // First, get metadata (do this before shortening so we have it ready)
+    console.log('Fetching metadata first...');
+    let metadata = await fetchMetadataWithTimeout(tab.url, tab, 8000);
+    console.log('Metadata result:', metadata);
+
     // Shorten the URL
-    const shortUrl = await shortenUrl(tab.url);
+    console.log('Now shortening URL...');
+    const shortUrl = await shortenUrlWithTimeout(tab.url, 10000);
+    console.log('Shortened URL:', shortUrl);
     
-    // Fetch metadata
-    const metadata = await fetchMetadata(tab.url, tab);
-    
-    // Combine data
+    // Combine data with better fallbacks
     currentUrlData = {
       originalUrl: tab.url,
       shortUrl: shortUrl,
-      title: metadata.title || tab.title || 'Untitled',
+      title: metadata.title || tab.title || extractTitleFromUrl(tab.url),
       favicon: metadata.favicon || tab.favIconUrl || '',
-      description: metadata.description || '',
+      description: metadata.description || tab.title || '',
       image: metadata.image || '',
       timestamp: Date.now(),
       clicks: 0
     };
+
+    console.log('Final currentUrlData:', currentUrlData);
 
     // Display the data
     displayUrlData(currentUrlData);
@@ -81,31 +101,100 @@ async function shortenCurrentTabUrl() {
     
     showLoading(false);
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error in shortenCurrentTabUrl:', error);
     showError(error.message || 'Failed to shorten URL');
   }
 }
 
-// Shorten URL using TinyURL API
-async function shortenUrl(url) {
+// Extract a readable title from URL as fallback
+function extractTitleFromUrl(url) {
   try {
-    // Using TinyURL API
-    const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`);
-    
-    if (!response.ok) {
-      throw new Error('Failed to shorten URL');
-    }
-    
-    const shortUrl = await response.text();
-    return shortUrl;
-  } catch (error) {
-    console.error('Shortening error:', error);
-    // Fallback to a mock shortened URL for demo
-    return `zimo.ws/${generateShortCode()}`;
+    const urlObj = new URL(url);
+    const domain = urlObj.hostname.replace('www.', '');
+    const path = urlObj.pathname.split('/').filter(p => p).join(' - ');
+    return path ? `${domain}: ${path}` : domain;
+  } catch (e) {
+    return 'Untitled Page';
   }
 }
 
-// Generate a random short code for demo purposes
+// Shorten URL with timeout
+async function shortenUrlWithTimeout(url, timeout = 10000) {
+  const shortenPromise = shortenUrl(url);
+  const timeoutPromise = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error('URL shortening timeout')), timeout)
+  );
+  
+  return Promise.race([shortenPromise, timeoutPromise]);
+}
+
+// Fetch metadata with timeout
+async function fetchMetadataWithTimeout(url, tab, timeout = 8000) {
+  const metadataPromise = fetchMetadata(url, tab);
+  const timeoutPromise = new Promise((resolve) => {
+    setTimeout(() => {
+      console.log('Metadata fetch timeout, using fallback');
+      resolve({
+        title: tab.title || extractTitleFromUrl(url),
+        favicon: tab.favIconUrl || '',
+        description: tab.title || '',
+        image: ''
+      });
+    }, timeout);
+  });
+  
+  return Promise.race([metadataPromise, timeoutPromise]);
+}
+
+// Shorten URL using multiple services
+async function shortenUrl(url) {
+  console.log('Attempting to shorten URL:', url);
+  
+  // Method 1: Try direct TinyURL call
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    
+    const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`, {
+      method: 'GET',
+      mode: 'cors',
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (response.ok) {
+      const shortUrl = await response.text();
+      if (shortUrl && shortUrl.startsWith('http')) {
+        console.log('TinyURL direct success:', shortUrl);
+        return shortUrl;
+      }
+    }
+  } catch (error) {
+    console.log('TinyURL direct failed:', error.message);
+  }
+
+  // Method 2: Try through background script
+  try {
+    const response = await chrome.runtime.sendMessage({
+      action: 'shortenUrl',
+      url: url
+    });
+
+    if (response && response.success && response.shortUrl) {
+      console.log('Background script success:', response.shortUrl);
+      return response.shortUrl;
+    }
+  } catch (error) {
+    console.log('Background script failed:', error.message);
+  }
+
+  // Final fallback: Generate mock short URL
+  console.log('Using fallback short URL');
+  return `https://zimo.ws/${generateShortCode()}`;
+}
+
+// Generate a random short code
 function generateShortCode(length = 6) {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let code = '';
@@ -115,72 +204,168 @@ function generateShortCode(length = 6) {
   return code;
 }
 
-// Fetch metadata from URL
+// Fetch metadata from URL using multiple methods
 async function fetchMetadata(url, tab) {
+  console.log('Starting metadata fetch for:', url);
+  
+  let metadata = {
+    title: tab.title || extractTitleFromUrl(url),
+    favicon: tab.favIconUrl || '',
+    description: tab.title || '',
+    image: ''
+  };
+
+  // Method 1: Try content script injection (most reliable)
   try {
-    // Try to inject a content script to get metadata
+    console.log('Trying content script injection...');
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: extractMetadata
+      func: extractMetadata,
+      args: [url]
     });
 
     if (results && results[0] && results[0].result) {
-      return results[0].result;
+      const scriptMetadata = results[0].result;
+      console.log('Content script returned:', scriptMetadata);
+      
+      // Merge with existing metadata, preferring content script data
+      metadata = {
+        title: scriptMetadata.title || metadata.title,
+        favicon: scriptMetadata.favicon || metadata.favicon,
+        description: scriptMetadata.description || metadata.description,
+        image: scriptMetadata.image || metadata.image
+      };
+      
+      console.log('Merged metadata after content script:', metadata);
+      
+      // If we got good data, return it
+      if (scriptMetadata.title || scriptMetadata.description) {
+        return metadata;
+      }
     }
   } catch (error) {
-    console.error('Metadata extraction error:', error);
+    console.log('Content script method failed:', error.message);
   }
 
-  // Return basic metadata from tab info
-  return {
-    title: tab.title || 'Untitled',
-    favicon: tab.favIconUrl || '',
-    description: '',
-    image: ''
-  };
+  // Method 2: Try background script fetch
+  try {
+    console.log('Trying background script fetch...');
+    const response = await chrome.runtime.sendMessage({
+      action: 'fetchMetadata',
+      url: url
+    });
+
+    if (response && response.success && response.metadata) {
+      const bgMetadata = response.metadata;
+      console.log('Background script returned:', bgMetadata);
+      
+      metadata = {
+        title: bgMetadata.title || metadata.title,
+        favicon: bgMetadata.favicon || metadata.favicon,
+        description: bgMetadata.description || metadata.description,
+        image: bgMetadata.image || metadata.image
+      };
+      
+      console.log('Merged metadata after background:', metadata);
+    }
+  } catch (error) {
+    console.log('Background fetch method failed:', error.message);
+  }
+
+  console.log('Final metadata to return:', metadata);
+  return metadata;
 }
 
 // Function to be injected into the page to extract metadata
-function extractMetadata() {
+function extractMetadata(pageUrl) {
+  console.log('extractMetadata running on page:', window.location.href);
+  
   const metadata = {
-    title: document.title,
+    title: '',
     favicon: '',
     description: '',
     image: ''
   };
 
-  // Get favicon
-  const faviconLink = document.querySelector('link[rel~="icon"]') || 
-                      document.querySelector('link[rel~="shortcut icon"]');
-  if (faviconLink) {
-    metadata.favicon = faviconLink.href;
+  try {
+    // Get title - try multiple sources in priority order
+    const ogTitle = document.querySelector('meta[property="og:title"]');
+    const twitterTitle = document.querySelector('meta[name="twitter:title"]');
+    const docTitle = document.title;
+    
+    metadata.title = (ogTitle && ogTitle.getAttribute('content')) || 
+                     (twitterTitle && twitterTitle.getAttribute('content')) || 
+                     docTitle || 
+                     '';
+    
+    console.log('Extracted title:', metadata.title);
+
+    // Get description
+    const ogDesc = document.querySelector('meta[property="og:description"]');
+    const twitterDesc = document.querySelector('meta[name="twitter:description"]');
+    const normalDesc = document.querySelector('meta[name="description"]');
+    
+    metadata.description = (ogDesc && ogDesc.getAttribute('content')) || 
+                          (twitterDesc && twitterDesc.getAttribute('content')) || 
+                          (normalDesc && normalDesc.getAttribute('content')) || 
+                          '';
+    
+    console.log('Extracted description:', metadata.description);
+
+    // Get image
+    const ogImage = document.querySelector('meta[property="og:image"]');
+    const twitterImage = document.querySelector('meta[name="twitter:image"]');
+    const ogImageUrl = document.querySelector('meta[property="og:image:url"]');
+    
+    metadata.image = (ogImage && ogImage.getAttribute('content')) || 
+                     (twitterImage && twitterImage.getAttribute('content')) || 
+                     (ogImageUrl && ogImageUrl.getAttribute('content')) || 
+                     '';
+    
+    console.log('Extracted image:', metadata.image);
+
+    // Get favicon
+    const iconLink = document.querySelector('link[rel*="icon"]');
+    const appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
+    
+    if (iconLink) {
+      metadata.favicon = iconLink.href;
+    } else if (appleIcon) {
+      metadata.favicon = appleIcon.href;
+    } else {
+      // Construct default favicon URL
+      try {
+        const url = new URL(pageUrl);
+        metadata.favicon = `${url.protocol}//${url.host}/favicon.ico`;
+      } catch (e) {
+        metadata.favicon = '';
+      }
+    }
+    
+    console.log('Extracted favicon:', metadata.favicon);
+  } catch (error) {
+    console.error('Error in extractMetadata:', error);
   }
 
-  // Get description
-  const descMeta = document.querySelector('meta[name="description"]') ||
-                   document.querySelector('meta[property="og:description"]');
-  if (descMeta) {
-    metadata.description = descMeta.content;
-  }
-
-  // Get image
-  const imageMeta = document.querySelector('meta[property="og:image"]') ||
-                    document.querySelector('meta[name="twitter:image"]');
-  if (imageMeta) {
-    metadata.image = imageMeta.content;
-  }
-
+  console.log('extractMetadata final result:', metadata);
   return metadata;
 }
 
 // Display URL data in the popup
 function displayUrlData(data) {
+  console.log('Displaying URL data:', data);
+  
   document.getElementById('mainCard').style.display = 'block';
   
   // Set source logo
-  const domain = new URL(data.originalUrl).hostname.replace('www.', '');
-  const logoText = domain.split('.')[0].substring(0, 3).toUpperCase();
-  document.getElementById('sourceLogo').textContent = logoText;
+  try {
+    const domain = new URL(data.originalUrl).hostname.replace('www.', '');
+    const logoText = domain.split('.')[0].substring(0, 3).toUpperCase();
+    document.getElementById('sourceLogo').textContent = logoText;
+    console.log('Logo text:', logoText);
+  } catch (e) {
+    document.getElementById('sourceLogo').textContent = 'URL';
+  }
   
   // Set short URL
   document.getElementById('shortUrl').textContent = data.shortUrl;
@@ -188,6 +373,7 @@ function displayUrlData(data) {
   
   // Set title
   document.getElementById('pageTitle').textContent = data.title;
+  console.log('Displayed title:', data.title);
   
   // Set original URL
   document.getElementById('originalUrl').textContent = data.originalUrl;
@@ -218,33 +404,43 @@ function formatDate(date) {
 
 // Save to history
 async function saveToHistory(data) {
-  historyData = await loadHistory();
-  
-  // Check if URL already exists
-  const existingIndex = historyData.findIndex(item => item.originalUrl === data.originalUrl);
-  
-  if (existingIndex !== -1) {
-    // Update existing entry
-    historyData[existingIndex] = data;
-  } else {
-    // Add new entry at the beginning
-    historyData.unshift(data);
+  try {
+    historyData = await loadHistory();
+    
+    // Check if URL already exists
+    const existingIndex = historyData.findIndex(item => item.originalUrl === data.originalUrl);
+    
+    if (existingIndex !== -1) {
+      // Update existing entry
+      historyData[existingIndex] = data;
+    } else {
+      // Add new entry at the beginning
+      historyData.unshift(data);
+    }
+    
+    // Keep only last 50 items
+    if (historyData.length > 50) {
+      historyData = historyData.slice(0, 50);
+    }
+    
+    // Save to storage
+    await chrome.storage.local.set({ urlHistory: historyData });
+    console.log('Saved to history');
+  } catch (error) {
+    console.error('Error saving to history:', error);
   }
-  
-  // Keep only last 50 items
-  if (historyData.length > 50) {
-    historyData = historyData.slice(0, 50);
-  }
-  
-  // Save to storage
-  await chrome.storage.local.set({ urlHistory: historyData });
 }
 
 // Load history from storage
 async function loadHistory() {
-  const result = await chrome.storage.local.get('urlHistory');
-  historyData = result.urlHistory || [];
-  return historyData;
+  try {
+    const result = await chrome.storage.local.get('urlHistory');
+    historyData = result.urlHistory || [];
+    return historyData;
+  } catch (error) {
+    console.error('Error loading history:', error);
+    return [];
+  }
 }
 
 // Display history
@@ -272,8 +468,13 @@ function displayHistory() {
     const card = document.createElement('div');
     card.className = 'card';
     
-    const domain = new URL(item.originalUrl).hostname.replace('www.', '');
-    const logoText = domain.split('.')[0].substring(0, 3).toUpperCase();
+    let logoText = 'URL';
+    try {
+      const domain = new URL(item.originalUrl).hostname.replace('www.', '');
+      logoText = domain.split('.')[0].substring(0, 3).toUpperCase();
+    } catch (e) {
+      // Keep default
+    }
     
     const date = new Date(item.timestamp);
     
@@ -369,17 +570,19 @@ function handleShareAction(action) {
   const url = currentUrlData.shortUrl;
   const text = currentUrlData.title;
   
+  console.log('Sharing:', { action, url, text });
+  
   const shareUrls = {
     copy: () => copyToClipboard(url),
-    bluesky: `https://bsky.app/intent/compose?text=${encodeURIComponent(text + ' ' + url)}`,
-    discord: () => copyToClipboard(url), // Discord doesn't have direct share URL
+    bluesky: `https://bsky.app/intent/compose?text=${encodeURIComponent(text + '\n' + url)}`,
+    discord: () => copyToClipboard(url),
     facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`,
-    omn: url, // Open the URL directly
+    omn: url,
     reddit: `https://reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(text)}`,
     telegram: `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`,
-    threads: `https://www.threads.net/intent/post?text=${encodeURIComponent(text + ' ' + url)}`,
+    threads: `https://www.threads.net/intent/post?text=${encodeURIComponent(text + '\n' + url)}`,
     twitter: `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`,
-    whatsapp: `https://wa.me/?text=${encodeURIComponent(text + ' ' + url)}`
+    whatsapp: `https://wa.me/?text=${encodeURIComponent(text + '\n\n' + url)}`
   };
   
   if (action === 'copy' || action === 'discord') {
