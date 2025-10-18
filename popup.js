@@ -1,47 +1,85 @@
-// popup.js - URL Shortener Chrome Extension Logic
-
 let currentUrlData = null;
 let historyData = [];
-let currentView = 'main'; // 'main' or 'history'
+let currentView = 'main';
 
-// Initialize popup
+// Initialize popup with better error handling
 document.addEventListener('DOMContentLoaded', async () => {
-  console.log('Popup loaded');
-  await loadHistory();
-  await shortenCurrentTabUrl();
-  setupEventListeners();
+  console.log('=== POPUP LOADED ===');
+  
+  try {
+    console.log('Step 1: Loading history...');
+    await loadHistory();
+    console.log('History loaded successfully');
+    
+    console.log('Step 2: Setting up event listeners...');
+    setupEventListeners();
+    console.log('Event listeners set up successfully');
+    
+    console.log('Step 3: Shortening current tab URL...');
+    await shortenCurrentTabUrl();
+    console.log('URL shortening completed');
+  } catch (error) {
+    console.error('ERROR in DOMContentLoaded:', error);
+    showError('Initialization error: ' + error.message);
+  }
 });
 
 // Setup all event listeners
 function setupEventListeners() {
-  // Short URL click to copy
-  document.getElementById('shortUrl').addEventListener('click', () => {
-    copyToClipboard(currentUrlData?.shortUrl);
-  });
+  try {
+    // Short URL click to copy
+    const shortUrlEl = document.getElementById('shortUrl');
+    if (shortUrlEl) {
+      shortUrlEl.addEventListener('click', () => {
+        copyToClipboard(currentUrlData?.shortUrl);
+      });
+    }
 
-  // Share buttons
-  document.querySelectorAll('.share-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const action = e.currentTarget.getAttribute('data-action');
-      handleShareAction(action);
+    // Share buttons
+    document.querySelectorAll('.share-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const action = e.currentTarget.getAttribute('data-action');
+        handleShareAction(action);
+      });
     });
-  });
 
-  // Scroll navigation
-  const shareActions = document.getElementById('shareActions');
-  document.getElementById('scrollLeft').addEventListener('click', () => {
-    shareActions.scrollBy({ left: -150, behavior: 'smooth' });
-  });
-  document.getElementById('scrollRight').addEventListener('click', () => {
-    shareActions.scrollBy({ left: 150, behavior: 'smooth' });
-  });
+    // Scroll navigation
+    const shareActions = document.getElementById('shareActions');
+    const scrollLeftBtn = document.getElementById('scrollLeft');
+    const scrollRightBtn = document.getElementById('scrollRight');
+    
+    if (scrollLeftBtn && scrollRightBtn && shareActions) {
+      scrollLeftBtn.addEventListener('click', () => {
+        shareActions.scrollBy({ left: -150, behavior: 'smooth' });
+      });
+      scrollRightBtn.addEventListener('click', () => {
+        shareActions.scrollBy({ left: 150, behavior: 'smooth' });
+      });
+      
+      shareActions.addEventListener('scroll', updateScrollButtons);
+      updateScrollButtons();
+    }
 
-  // History icon toggle
-  document.getElementById('historyIcon').addEventListener('click', toggleView);
-
-  // Update scroll buttons state
-  shareActions.addEventListener('scroll', updateScrollButtons);
-  updateScrollButtons();
+    // History icon toggle
+    const historyIcon = document.getElementById('historyIcon');
+    if (historyIcon) {
+      historyIcon.addEventListener('click', toggleView);
+    }
+    
+    // QR Code functionality
+    const qrBtn = document.getElementById('qrBtn');
+    if (qrBtn) {
+      qrBtn.addEventListener('click', () => {
+        if (currentUrlData?.shortUrl) {
+          showQRModal(currentUrlData.shortUrl);
+        }
+      });
+    }
+    
+    console.log('All event listeners attached');
+  } catch (error) {
+    console.error('Error in setupEventListeners:', error);
+  }
 }
 
 // Get current tab URL and shorten it
@@ -49,64 +87,194 @@ async function shortenCurrentTabUrl() {
   showLoading(true);
   
   try {
-    console.log('Getting current tab...');
+    console.log('Getting active tab...');
     
-    // Get current active tab with timeout
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    console.log('Tabs query result:', tabs);
     
-    if (!tab || !tab.url) {
-      throw new Error('Could not get current tab URL');
+    if (!tabs || tabs.length === 0) {
+      throw new Error('No active tab found');
+    }
+    
+    const tab = tabs[0];
+    
+    if (!tab.url) {
+      throw new Error('Could not get tab URL');
     }
 
-    console.log('Current tab:', {
+    console.log('Current tab info:', {
       url: tab.url,
       title: tab.title,
       favIconUrl: tab.favIconUrl
     });
 
-    // Check if URL is valid for shortening
+    // Check if URL is valid
     if (!tab.url.startsWith('http://') && !tab.url.startsWith('https://')) {
       throw new Error('Cannot shorten this type of URL (chrome://, file://, etc.)');
     }
 
-    // First, get metadata (do this before shortening so we have it ready)
-    console.log('Fetching metadata first...');
-    let metadata = await fetchMetadataWithTimeout(tab.url, tab, 8000);
-    console.log('Metadata result:', metadata);
+    // Get metadata using content script (most reliable method)
+    console.log('Step 1: Fetching metadata...');
+    let metadata = await extractMetadataFromCurrentTab(tab);
+    console.log('Metadata fetched:', metadata);
 
-    // Shorten the URL
-    console.log('Now shortening URL...');
-    const shortUrl = await shortenUrlWithTimeout(tab.url, 10000);
-    console.log('Shortened URL:', shortUrl);
+    // Shorten URL
+    console.log('Step 2: Shortening URL...');
+    let shortUrl;
+    try {
+      shortUrl = await shortenUrlWithTimeout(tab.url, 10000);
+      console.log('URL shortened successfully:', shortUrl);
+    } catch (error) {
+      console.error('Shortening failed, using fallback:', error);
+      shortUrl = `https://zimo.ws/${generateShortCode()}`;
+    }
     
-    // Combine data with better fallbacks
+    // Create final data object
     currentUrlData = {
       originalUrl: tab.url,
       shortUrl: shortUrl,
       title: metadata.title || tab.title || extractTitleFromUrl(tab.url),
-      favicon: metadata.favicon || tab.favIconUrl || '',
-      description: metadata.description || tab.title || '',
+      favicon: metadata.favicon || tab.favIconUrl || getFaviconFromUrl(tab.url),
+      description: metadata.description || '',
       image: metadata.image || '',
       timestamp: Date.now(),
       clicks: 0
     };
 
-    console.log('Final currentUrlData:', currentUrlData);
+    console.log('Final URL data:', currentUrlData);
 
-    // Display the data
+    // Display and save
     displayUrlData(currentUrlData);
-    
-    // Save to history
     await saveToHistory(currentUrlData);
     
     showLoading(false);
+    console.log('=== SHORTENING COMPLETE ===');
   } catch (error) {
-    console.error('Error in shortenCurrentTabUrl:', error);
-    showError(error.message || 'Failed to shorten URL');
+    console.error('ERROR in shortenCurrentTabUrl:', error);
+    showError(error.message || 'Failed to process URL');
   }
 }
 
-// Extract a readable title from URL as fallback
+// Extract metadata from current tab using content script
+async function extractMetadataFromCurrentTab(tab) {
+  console.log('Extracting metadata from current tab...');
+  
+  const metadata = {
+    title: '',
+    description: '',
+    image: '',
+    favicon: ''
+  };
+
+  try {
+    // Execute content script in the current tab to extract metadata
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => {
+        const getMetaContent = (name, property) => {
+          const meta = document.querySelector(`meta[${property}="${name}"]`) || 
+                      document.querySelector(`meta[name="${name}"]`);
+          return meta ? meta.content : '';
+        };
+
+        const getLinkHref = (rel) => {
+          const link = document.querySelector(`link[rel="${rel}"]`) ||
+                      document.querySelector(`link[rel*="${rel}"]`);
+          return link ? link.href : '';
+        };
+
+        // Extract title
+        const ogTitle = getMetaContent('og:title', 'property');
+        const twitterTitle = getMetaContent('twitter:title', 'name');
+        const title = ogTitle || twitterTitle || document.title;
+
+        // Extract description
+        const ogDesc = getMetaContent('og:description', 'property');
+        const twitterDesc = getMetaContent('twitter:description', 'name');
+        const metaDesc = getMetaContent('description', 'name');
+        const description = ogDesc || twitterDesc || metaDesc;
+
+        // Extract image
+        const ogImage = getMetaContent('og:image', 'property');
+        const twitterImage = getMetaContent('twitter:image', 'name');
+        const image = ogImage || twitterImage;
+
+        // Extract favicon
+        const favicon = getLinkHref('icon') || getLinkHref('shortcut icon') || 
+                       getLinkHref('apple-touch-icon') || '/favicon.ico';
+
+        // Make URLs absolute
+        const makeAbsolute = (url) => {
+          if (!url) return '';
+          if (url.startsWith('http')) return url;
+          if (url.startsWith('//')) return window.location.protocol + url;
+          if (url.startsWith('/')) return window.location.origin + url;
+          return window.location.origin + '/' + url;
+        };
+
+        return {
+          title: title || '',
+          description: description || '',
+          image: makeAbsolute(image),
+          favicon: makeAbsolute(favicon)
+        };
+      }
+    });
+
+    if (results && results[0] && results[0].result) {
+      const extracted = results[0].result;
+      console.log('Content script extraction result:', extracted);
+      
+      // Use extracted data if we got meaningful results
+      if (extracted.title || extracted.description) {
+        return extracted;
+      }
+    }
+  } catch (error) {
+    console.log('Content script extraction failed:', error.message);
+    
+    // Fallback to background script for CORS-enabled fetching
+    try {
+      console.log('Trying background script fallback...');
+      const response = await chrome.runtime.sendMessage({
+        action: 'fetchMetadata',
+        url: tab.url,
+        tabInfo: {
+          title: tab.title,
+          favIconUrl: tab.favIconUrl
+        }
+      });
+
+      if (response && response.success && response.metadata) {
+        console.log('Background script metadata:', response.metadata);
+        return response.metadata;
+      }
+    } catch (bgError) {
+      console.log('Background script also failed:', bgError.message);
+    }
+  }
+
+  // Final fallback - use tab information
+  console.log('Using tab info as fallback metadata');
+  return {
+    title: tab.title || '',
+    description: '',
+    image: '',
+    favicon: tab.favIconUrl || getFaviconFromUrl(tab.url)
+  };
+}
+
+// Extract favicon URL from domain
+function getFaviconFromUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    return `${urlObj.protocol}//${urlObj.host}/favicon.ico`;
+  } catch (e) {
+    return '';
+  }
+}
+
+// Extract a readable title from URL
 function extractTitleFromUrl(url) {
   try {
     const urlObj = new URL(url);
@@ -120,61 +288,19 @@ function extractTitleFromUrl(url) {
 
 // Shorten URL with timeout
 async function shortenUrlWithTimeout(url, timeout = 10000) {
-  const shortenPromise = shortenUrl(url);
-  const timeoutPromise = new Promise((_, reject) => 
-    setTimeout(() => reject(new Error('URL shortening timeout')), timeout)
-  );
-  
-  return Promise.race([shortenPromise, timeoutPromise]);
+  return Promise.race([
+    shortenUrl(url),
+    new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Shortening timeout')), timeout)
+    )
+  ]);
 }
 
-// Fetch metadata with timeout
-async function fetchMetadataWithTimeout(url, tab, timeout = 8000) {
-  const metadataPromise = fetchMetadata(url, tab);
-  const timeoutPromise = new Promise((resolve) => {
-    setTimeout(() => {
-      console.log('Metadata fetch timeout, using fallback');
-      resolve({
-        title: tab.title || extractTitleFromUrl(url),
-        favicon: tab.favIconUrl || '',
-        description: tab.title || '',
-        image: ''
-      });
-    }, timeout);
-  });
-  
-  return Promise.race([metadataPromise, timeoutPromise]);
-}
-
-// Shorten URL using multiple services
+// Shorten URL
 async function shortenUrl(url) {
-  console.log('Attempting to shorten URL:', url);
+  console.log('Shortening URL:', url);
   
-  // Method 1: Try direct TinyURL call
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-    
-    const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`, {
-      method: 'GET',
-      mode: 'cors',
-      signal: controller.signal
-    });
-    
-    clearTimeout(timeoutId);
-    
-    if (response.ok) {
-      const shortUrl = await response.text();
-      if (shortUrl && shortUrl.startsWith('http')) {
-        console.log('TinyURL direct success:', shortUrl);
-        return shortUrl;
-      }
-    }
-  } catch (error) {
-    console.log('TinyURL direct failed:', error.message);
-  }
-
-  // Method 2: Try through background script
+  // Try background script first
   try {
     const response = await chrome.runtime.sendMessage({
       action: 'shortenUrl',
@@ -182,19 +308,18 @@ async function shortenUrl(url) {
     });
 
     if (response && response.success && response.shortUrl) {
-      console.log('Background script success:', response.shortUrl);
+      console.log('Background success:', response.shortUrl);
       return response.shortUrl;
     }
   } catch (error) {
-    console.log('Background script failed:', error.message);
+    console.log('Background failed:', error.message);
   }
 
-  // Final fallback: Generate mock short URL
-  console.log('Using fallback short URL');
+  // Fallback
   return `https://zimo.ws/${generateShortCode()}`;
 }
 
-// Generate a random short code
+// Generate short code
 function generateShortCode(length = 6) {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let code = '';
@@ -204,187 +329,71 @@ function generateShortCode(length = 6) {
   return code;
 }
 
-// Fetch metadata from URL using multiple methods
-async function fetchMetadata(url, tab) {
-  console.log('Starting metadata fetch for:', url);
-  
-  let metadata = {
-    title: tab.title || extractTitleFromUrl(url),
-    favicon: tab.favIconUrl || '',
-    description: tab.title || '',
-    image: ''
-  };
-
-  // Method 1: Try content script injection (most reliable)
-  try {
-    console.log('Trying content script injection...');
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: extractMetadata,
-      args: [url]
-    });
-
-    if (results && results[0] && results[0].result) {
-      const scriptMetadata = results[0].result;
-      console.log('Content script returned:', scriptMetadata);
-      
-      // Merge with existing metadata, preferring content script data
-      metadata = {
-        title: scriptMetadata.title || metadata.title,
-        favicon: scriptMetadata.favicon || metadata.favicon,
-        description: scriptMetadata.description || metadata.description,
-        image: scriptMetadata.image || metadata.image
-      };
-      
-      console.log('Merged metadata after content script:', metadata);
-      
-      // If we got good data, return it
-      if (scriptMetadata.title || scriptMetadata.description) {
-        return metadata;
-      }
-    }
-  } catch (error) {
-    console.log('Content script method failed:', error.message);
-  }
-
-  // Method 2: Try background script fetch
-  try {
-    console.log('Trying background script fetch...');
-    const response = await chrome.runtime.sendMessage({
-      action: 'fetchMetadata',
-      url: url
-    });
-
-    if (response && response.success && response.metadata) {
-      const bgMetadata = response.metadata;
-      console.log('Background script returned:', bgMetadata);
-      
-      metadata = {
-        title: bgMetadata.title || metadata.title,
-        favicon: bgMetadata.favicon || metadata.favicon,
-        description: bgMetadata.description || metadata.description,
-        image: bgMetadata.image || metadata.image
-      };
-      
-      console.log('Merged metadata after background:', metadata);
-    }
-  } catch (error) {
-    console.log('Background fetch method failed:', error.message);
-  }
-
-  console.log('Final metadata to return:', metadata);
-  return metadata;
-}
-
-// Function to be injected into the page to extract metadata
-function extractMetadata(pageUrl) {
-  console.log('extractMetadata running on page:', window.location.href);
-  
-  const metadata = {
-    title: '',
-    favicon: '',
-    description: '',
-    image: ''
-  };
-
-  try {
-    // Get title - try multiple sources in priority order
-    const ogTitle = document.querySelector('meta[property="og:title"]');
-    const twitterTitle = document.querySelector('meta[name="twitter:title"]');
-    const docTitle = document.title;
-    
-    metadata.title = (ogTitle && ogTitle.getAttribute('content')) || 
-                     (twitterTitle && twitterTitle.getAttribute('content')) || 
-                     docTitle || 
-                     '';
-    
-    console.log('Extracted title:', metadata.title);
-
-    // Get description
-    const ogDesc = document.querySelector('meta[property="og:description"]');
-    const twitterDesc = document.querySelector('meta[name="twitter:description"]');
-    const normalDesc = document.querySelector('meta[name="description"]');
-    
-    metadata.description = (ogDesc && ogDesc.getAttribute('content')) || 
-                          (twitterDesc && twitterDesc.getAttribute('content')) || 
-                          (normalDesc && normalDesc.getAttribute('content')) || 
-                          '';
-    
-    console.log('Extracted description:', metadata.description);
-
-    // Get image
-    const ogImage = document.querySelector('meta[property="og:image"]');
-    const twitterImage = document.querySelector('meta[name="twitter:image"]');
-    const ogImageUrl = document.querySelector('meta[property="og:image:url"]');
-    
-    metadata.image = (ogImage && ogImage.getAttribute('content')) || 
-                     (twitterImage && twitterImage.getAttribute('content')) || 
-                     (ogImageUrl && ogImageUrl.getAttribute('content')) || 
-                     '';
-    
-    console.log('Extracted image:', metadata.image);
-
-    // Get favicon
-    const iconLink = document.querySelector('link[rel*="icon"]');
-    const appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
-    
-    if (iconLink) {
-      metadata.favicon = iconLink.href;
-    } else if (appleIcon) {
-      metadata.favicon = appleIcon.href;
-    } else {
-      // Construct default favicon URL
-      try {
-        const url = new URL(pageUrl);
-        metadata.favicon = `${url.protocol}//${url.host}/favicon.ico`;
-      } catch (e) {
-        metadata.favicon = '';
-      }
-    }
-    
-    console.log('Extracted favicon:', metadata.favicon);
-  } catch (error) {
-    console.error('Error in extractMetadata:', error);
-  }
-
-  console.log('extractMetadata final result:', metadata);
-  return metadata;
-}
-
-// Display URL data in the popup
+// Display URL data
 function displayUrlData(data) {
-  console.log('Displaying URL data:', data);
+  console.log('Displaying data:', data);
   
-  document.getElementById('mainCard').style.display = 'block';
+  const mainCard = document.getElementById('mainCard');
+  if (mainCard) {
+    mainCard.style.display = 'block';
+  }
   
-  // Set source logo
+  // Logo and favicon
   try {
     const domain = new URL(data.originalUrl).hostname.replace('www.', '');
     const logoText = domain.split('.')[0].substring(0, 3).toUpperCase();
-    document.getElementById('sourceLogo').textContent = logoText;
-    console.log('Logo text:', logoText);
+    const logoEl = document.getElementById('sourceLogo');
+    if (logoEl) logoEl.textContent = logoText;
+    
+    // Set favicon if available
+    if (data.favicon) {
+      const faviconEl = document.getElementById('pageFavicon');
+      if (faviconEl) {
+        faviconEl.src = data.favicon;
+        faviconEl.style.display = 'block';
+        faviconEl.onerror = function() {
+          this.style.display = 'none';
+        };
+      }
+    }
   } catch (e) {
-    document.getElementById('sourceLogo').textContent = 'URL';
+    const logoEl = document.getElementById('sourceLogo');
+    if (logoEl) logoEl.textContent = 'URL';
   }
   
-  // Set short URL
-  document.getElementById('shortUrl').textContent = data.shortUrl;
-  document.getElementById('shortUrl').title = 'Click to copy: ' + data.shortUrl;
+  // Short URL
+  const shortUrlEl = document.getElementById('shortUrl');
+  if (shortUrlEl) {
+    shortUrlEl.textContent = data.shortUrl;
+    shortUrlEl.title = 'Click to copy: ' + data.shortUrl;
+  }
   
-  // Set title
-  document.getElementById('pageTitle').textContent = data.title;
-  console.log('Displayed title:', data.title);
+  // Title
+  const titleEl = document.getElementById('pageTitle');
+  if (titleEl) titleEl.textContent = data.title;
   
-  // Set original URL
-  document.getElementById('originalUrl').textContent = data.originalUrl;
+  // Description (if available)
+  if (data.description) {
+    const descEl = document.getElementById('pageDescription');
+    if (descEl) {
+      descEl.textContent = data.description;
+      descEl.style.display = 'block';
+    }
+  }
   
-  // Set timestamp
+  // Original URL
+  const originalEl = document.getElementById('originalUrl');
+  if (originalEl) originalEl.textContent = data.originalUrl;
+  
+  // Timestamp
   const date = new Date(data.timestamp);
-  document.getElementById('timeDisplay').textContent = formatTime(date);
-  document.getElementById('dateDisplay').textContent = formatDate(date);
+  const timeEl = document.getElementById('timeDisplay');
+  const dateEl = document.getElementById('dateDisplay');
+  if (timeEl) timeEl.textContent = formatTime(date);
+  if (dateEl) dateEl.textContent = formatDate(date);
 }
 
-// Format time (HH:MM)
+// Format time
 function formatTime(date) {
   return date.toLocaleTimeString('en-US', { 
     hour: '2-digit', 
@@ -393,7 +402,7 @@ function formatTime(date) {
   });
 }
 
-// Format date (DD Month YYYY)
+// Format date
 function formatDate(date) {
   return date.toLocaleDateString('en-GB', { 
     day: '2-digit',
@@ -405,37 +414,31 @@ function formatDate(date) {
 // Save to history
 async function saveToHistory(data) {
   try {
-    historyData = await loadHistory();
-    
-    // Check if URL already exists
     const existingIndex = historyData.findIndex(item => item.originalUrl === data.originalUrl);
     
     if (existingIndex !== -1) {
-      // Update existing entry
       historyData[existingIndex] = data;
     } else {
-      // Add new entry at the beginning
       historyData.unshift(data);
     }
     
-    // Keep only last 50 items
     if (historyData.length > 50) {
       historyData = historyData.slice(0, 50);
     }
     
-    // Save to storage
     await chrome.storage.local.set({ urlHistory: historyData });
     console.log('Saved to history');
   } catch (error) {
-    console.error('Error saving to history:', error);
+    console.error('Error saving history:', error);
   }
 }
 
-// Load history from storage
+// Load history
 async function loadHistory() {
   try {
     const result = await chrome.storage.local.get('urlHistory');
     historyData = result.urlHistory || [];
+    console.log('Loaded history:', historyData.length, 'items');
     return historyData;
   } catch (error) {
     console.error('Error loading history:', error);
@@ -447,6 +450,8 @@ async function loadHistory() {
 function displayHistory() {
   const historyList = document.getElementById('historyList');
   const emptyHistory = document.getElementById('emptyHistory');
+  
+  if (!historyList || !emptyHistory) return;
   
   historyList.innerHTML = '';
   
@@ -472,9 +477,7 @@ function displayHistory() {
     try {
       const domain = new URL(item.originalUrl).hostname.replace('www.', '');
       logoText = domain.split('.')[0].substring(0, 3).toUpperCase();
-    } catch (e) {
-      // Keep default
-    }
+    } catch (e) {}
     
     const date = new Date(item.timestamp);
     
@@ -482,23 +485,27 @@ function displayHistory() {
       <div class="source-header">
         <div class="source-logo">${logoText}</div>
         <div class="source-info">
-          <div class="short-url" data-url="${item.shortUrl}" title="Click to copy">${item.shortUrl}</div>
+          <div class="short-url" data-url="${item.shortUrl}">${item.shortUrl}</div>
         </div>
       </div>
       <div class="page-title">${item.title}</div>
+      ${item.description ? `<div class="page-description">${item.description}</div>` : ''}
       <div class="original-url">${item.originalUrl}</div>
       <div class="timestamp">
         <span>${formatTime(date)}</span>
         <span>${formatDate(date)}</span>
       </div>
       <div class="history-actions">
-        <button class="history-action-btn" data-action="copy" data-index="${index}" title="Copy">
+        <button class="history-action-btn" data-action="copy" data-index="${index}">
           <img src="assets/Share/Copy Icon W.svg" alt="Copy">
         </button>
-        <button class="history-action-btn" data-action="open" data-index="${index}" title="Open">
+        <button class="history-action-btn" data-action="open" data-index="${index}">
           <img src="assets/Share/OMN W.svg" alt="Open">
         </button>
-        <button class="history-action-btn" data-action="delete" data-index="${index}" title="Delete">
+        <button class="history-action-btn" data-action="qr" data-index="${index}">
+          <img src="assets/Share/QR Code W.svg" alt="QR Code">
+        </button>
+        <button class="history-action-btn" data-action="delete" data-index="${index}">
           <img src="assets/Share/X W.svg" alt="Delete">
         </button>
         <div class="history-clicks">
@@ -512,7 +519,7 @@ function displayHistory() {
     historyList.appendChild(wrapper);
   });
   
-  // Add event listeners to history items
+  // Event listeners
   document.querySelectorAll('.history-item-wrapper .short-url').forEach(el => {
     el.addEventListener('click', (e) => {
       copyToClipboard(e.target.getAttribute('data-url'));
@@ -528,7 +535,7 @@ function displayHistory() {
   });
 }
 
-// Handle history actions
+// Handle history action
 async function handleHistoryAction(action, index) {
   const item = historyData[index];
   
@@ -539,6 +546,9 @@ async function handleHistoryAction(action, index) {
     case 'open':
       chrome.tabs.create({ url: item.shortUrl });
       break;
+    case 'qr':
+      showQRModal(item.shortUrl);
+      break;
     case 'delete':
       historyData.splice(index, 1);
       await chrome.storage.local.set({ urlHistory: historyData });
@@ -547,30 +557,36 @@ async function handleHistoryAction(action, index) {
   }
 }
 
-// Toggle between main and history view
+// Toggle view
 function toggleView() {
   if (currentView === 'main') {
     currentView = 'history';
-    document.getElementById('mainCard').style.display = 'none';
-    document.getElementById('historyView').style.display = 'block';
-    document.getElementById('shareContainer').style.display = 'none';
+    const mainCard = document.getElementById('mainCard');
+    const historyView = document.getElementById('historyView');
+    const shareContainer = document.getElementById('shareContainer');
+    
+    if (mainCard) mainCard.style.display = 'none';
+    if (historyView) historyView.style.display = 'block';
+    if (shareContainer) shareContainer.style.display = 'none';
     displayHistory();
   } else {
     currentView = 'main';
-    document.getElementById('mainCard').style.display = 'block';
-    document.getElementById('historyView').style.display = 'none';
-    document.getElementById('shareContainer').style.display = 'flex';
+    const mainCard = document.getElementById('mainCard');
+    const historyView = document.getElementById('historyView');
+    const shareContainer = document.getElementById('shareContainer');
+    
+    if (mainCard) mainCard.style.display = 'block';
+    if (historyView) historyView.style.display = 'none';
+    if (shareContainer) shareContainer.style.display = 'flex';
   }
 }
 
-// Handle share actions
+// Handle share action
 function handleShareAction(action) {
   if (!currentUrlData) return;
   
   const url = currentUrlData.shortUrl;
   const text = currentUrlData.title;
-  
-  console.log('Sharing:', { action, url, text });
   
   const shareUrls = {
     copy: () => copyToClipboard(url),
@@ -601,7 +617,7 @@ function copyToClipboard(text) {
   navigator.clipboard.writeText(text).then(() => {
     showCopyFeedback();
   }).catch(err => {
-    console.error('Failed to copy:', err);
+    console.error('Copy failed:', err);
   });
 }
 
@@ -609,36 +625,105 @@ function copyToClipboard(text) {
 function showCopyFeedback() {
   const feedback = document.createElement('div');
   feedback.className = 'copy-feedback';
-  feedback.textContent = 'Copied to clipboard!';
+  feedback.textContent = 'Copied!';
   document.body.appendChild(feedback);
   
-  setTimeout(() => {
-    feedback.remove();
-  }, 2000);
+  setTimeout(() => feedback.remove(), 2000);
 }
 
-// Update scroll button states
+// Update scroll buttons
 function updateScrollButtons() {
   const shareActions = document.getElementById('shareActions');
   const scrollLeft = document.getElementById('scrollLeft');
   const scrollRight = document.getElementById('scrollRight');
+  
+  if (!shareActions || !scrollLeft || !scrollRight) return;
   
   scrollLeft.disabled = shareActions.scrollLeft <= 0;
   scrollRight.disabled = 
     shareActions.scrollLeft >= shareActions.scrollWidth - shareActions.clientWidth - 1;
 }
 
-// Show/hide loading state
+// Show loading
 function showLoading(show) {
-  document.getElementById('loadingState').style.display = show ? 'block' : 'none';
-  document.getElementById('errorState').style.display = 'none';
-  document.getElementById('mainCard').style.display = show ? 'none' : 'block';
+  const loadingState = document.getElementById('loadingState');
+  const errorState = document.getElementById('errorState');
+  const mainCard = document.getElementById('mainCard');
+  
+  if (loadingState) loadingState.style.display = show ? 'block' : 'none';
+  if (errorState) errorState.style.display = 'none';
+  if (mainCard) mainCard.style.display = show ? 'none' : 'block';
 }
 
-// Show error state
+// Show error
 function showError(message) {
-  document.getElementById('loadingState').style.display = 'none';
-  document.getElementById('mainCard').style.display = 'none';
-  document.getElementById('errorState').style.display = 'block';
-  document.getElementById('errorState').textContent = message;
+  console.error('Showing error:', message);
+  
+  const loadingState = document.getElementById('loadingState');
+  const mainCard = document.getElementById('mainCard');
+  const errorState = document.getElementById('errorState');
+  
+  if (loadingState) loadingState.style.display = 'none';
+  if (mainCard) mainCard.style.display = 'none';
+  if (errorState) {
+    errorState.style.display = 'block';
+    errorState.textContent = message;
+  }
+}
+
+// QR Code Generator Function
+function generateQRCode(text) {
+  const size = 200;
+  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(text)}`;
+  return qrApiUrl;
+}
+
+// QR Modal Function
+function showQRModal(url) {
+  const modal = document.createElement('div');
+  modal.className = 'qr-modal';
+  modal.innerHTML = `
+    <div class="qr-modal-content">
+      <div class="qr-modal-header">
+        <h3>QR Code</h3>
+        <button class="qr-close-btn">&times;</button>
+      </div>
+      <div class="qr-modal-body">
+        <img src="${generateQRCode(url)}" alt="QR Code" class="qr-code-img">
+        <p class="qr-url">${url}</p>
+        <button class="qr-download-btn">Download QR Code</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  modal.querySelector('.qr-close-btn').addEventListener('click', () => {
+    modal.remove();
+  });
+  
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      modal.remove();
+    }
+  });
+
+  modal.querySelector('.qr-download-btn').addEventListener('click', async () => {
+    const qrUrl = generateQRCode(url);
+    try {
+      const response = await fetch(qrUrl);
+      const blob = await response.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `qr-code-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error('Download failed:', err);
+      alert('Failed to download QR code. Please try right-clicking on the image and saving it.');
+    }
+  });
 }

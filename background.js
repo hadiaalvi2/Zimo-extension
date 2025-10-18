@@ -1,17 +1,12 @@
-// background.js - Chrome Extension Service Worker
-
-// Initialize extension on install
 chrome.runtime.onInstalled.addListener((details) => {
   console.log('ZIMO URL Shortener installed:', details.reason);
   
   if (details.reason === 'install') {
-    // Initialize storage
     chrome.storage.local.set({
       urlHistory: []
     });
   }
   
-  // Create context menu
   try {
     chrome.contextMenus.create({
       id: 'shortenUrl',
@@ -23,7 +18,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   }
 });
 
-// Listen for messages from popup or content scripts
+// Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Background received message:', request.action);
   
@@ -37,11 +32,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         console.error('Background shorten error:', error);
         sendResponse({ success: false, error: error.message });
       });
-    return true; // Keep message channel open for async response
+    return true;
   }
   
   if (request.action === 'fetchMetadata') {
-    fetchMetadataInBackground(request.url)
+    fetchMetadataInBackground(request.url, request.tabInfo)
       .then(metadata => {
         console.log('Background metadata success:', metadata);
         sendResponse({ success: true, metadata });
@@ -54,11 +49,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// Shorten URL in background with multiple fallbacks
+// Shorten URL with multiple fallbacks
 async function shortenUrlInBackground(url) {
   console.log('Background: Attempting to shorten URL:', url);
   
-  // Method 1: Try TinyURL API
+  // Method 1: Try TinyURL
   try {
     console.log('Trying TinyURL...');
     const controller = new AbortController();
@@ -81,7 +76,6 @@ async function shortenUrlInBackground(url) {
         return shortUrl;
       }
     }
-    console.log('TinyURL failed: Invalid response');
   } catch (error) {
     console.log('TinyURL error:', error.message);
   }
@@ -106,7 +100,6 @@ async function shortenUrlInBackground(url) {
         return shortUrl;
       }
     }
-    console.log('is.gd failed: Invalid response');
   } catch (error) {
     console.log('is.gd error:', error.message);
   }
@@ -131,20 +124,88 @@ async function shortenUrlInBackground(url) {
         return shortUrl;
       }
     }
-    console.log('v.gd failed: Invalid response');
   } catch (error) {
     console.log('v.gd error:', error.message);
   }
 
-  // Final fallback: Generate mock short URL
+  // Fallback: Generate mock short URL
   console.log('Using fallback short URL generation');
   return `https://zimo.ws/${generateShortCode()}`;
 }
 
-// Fetch metadata in background using multiple strategies
-async function fetchMetadataInBackground(url) {
+// Fetch metadata using CORS proxy
+async function fetchMetadataInBackground(url, tabInfo = {}) {
   console.log('Background: Fetching metadata for:', url);
   
+  const metadata = {
+    title: tabInfo.title || '',
+    description: '',
+    image: '',
+    favicon: tabInfo.favIconUrl || ''
+  };
+
+  // Set basic fallbacks from URL
+  try {
+    const urlObj = new URL(url);
+    if (!metadata.favicon) {
+      metadata.favicon = `${urlObj.protocol}//${urlObj.host}/favicon.ico`;
+    }
+    if (!metadata.title) {
+      metadata.title = urlObj.hostname.replace('www.', '');
+    }
+  } catch (e) {
+    console.error('Invalid URL:', e);
+  }
+
+  // Try CORS proxy approach
+  try {
+    console.log('Trying CORS proxy...');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    
+    // Use a reliable CORS proxy
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+    const response = await fetch(proxyUrl, {
+      method: 'GET',
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (response.ok) {
+      const data = await response.json();
+      const html = data.contents;
+      
+      if (html) {
+        const extracted = extractMetadataFromHTML(html, url);
+        
+        // Only update if we got meaningful data
+        if (extracted.title && extracted.title !== metadata.title) {
+          metadata.title = extracted.title;
+        }
+        if (extracted.description) {
+          metadata.description = extracted.description;
+        }
+        if (extracted.image) {
+          metadata.image = extracted.image;
+        }
+        if (extracted.favicon && extracted.favicon !== metadata.favicon) {
+          metadata.favicon = extracted.favicon;
+        }
+        
+        console.log('Proxy metadata extracted:', extracted);
+      }
+    }
+  } catch (error) {
+    console.log('CORS proxy error:', error.message);
+  }
+
+  console.log('Final metadata:', metadata);
+  return metadata;
+}
+
+// Extract metadata from HTML content
+function extractMetadataFromHTML(html, originalUrl) {
   const metadata = {
     title: '',
     description: '',
@@ -153,135 +214,92 @@ async function fetchMetadataInBackground(url) {
   };
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    // Create a temporary div to parse HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
     
-    // Fetch with timeout
-    const response = await fetch(url, {
-      method: 'GET',
-      signal: controller.signal,
-      headers: {
-        'Accept': 'text/html,application/xhtml+xml,application/xml',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    });
+    // Helper function to get meta content
+    const getMetaContent = (name, property) => {
+      const selector = property ? 
+        `meta[property="${name}"], meta[name="${name}"]` : 
+        `meta[name="${name}"]`;
+      const meta = tempDiv.querySelector(selector);
+      return meta ? meta.getAttribute('content') : '';
+    };
+
+    // Extract title
+    const ogTitle = getMetaContent('og:title', true);
+    const twitterTitle = getMetaContent('twitter:title', true);
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    const documentTitle = titleMatch ? titleMatch[1].trim() : '';
     
-    clearTimeout(timeoutId);
+    metadata.title = ogTitle || twitterTitle || documentTitle;
+
+    // Extract description
+    const ogDesc = getMetaContent('og:description', true);
+    const twitterDesc = getMetaContent('twitter:description', true);
+    const metaDesc = getMetaContent('description', false);
     
-    if (!response.ok) {
-      console.log(`HTTP error! status: ${response.status}`);
-      return metadata;
-    }
-    
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('text/html')) {
-      console.log('Not an HTML page, skipping metadata extraction');
-      return metadata;
+    metadata.description = ogDesc || twitterDesc || metaDesc;
+
+    // Extract image
+    const ogImage = getMetaContent('og:image', true);
+    const twitterImage = getMetaContent('twitter:image', true);
+    metadata.image = ogImage || twitterImage;
+
+    // Extract favicon
+    const faviconMatch = html.match(/<link[^>]*rel=(["'])?(?:icon|shortcut icon|apple-touch-icon)(["'])?[^>]*href=(["'])([^"']+)\3/i);
+    if (faviconMatch && faviconMatch[4]) {
+      metadata.favicon = faviconMatch[4];
     }
 
-    const html = await response.text();
-    
-    // Parse HTML
-    metadata.title = extractMetaTag(html, 'title') || 
-                     extractOGTag(html, 'og:title') ||
-                     extractTwitterTag(html, 'twitter:title');
-    
-    metadata.description = extractMetaTag(html, 'description') ||
-                          extractOGTag(html, 'og:description') ||
-                          extractTwitterTag(html, 'twitter:description');
-    
-    metadata.image = extractOGTag(html, 'og:image') ||
-                     extractTwitterTag(html, 'twitter:image') ||
-                     extractOGTag(html, 'og:image:url');
-    
-    // Get favicon
-    const urlObj = new URL(url);
-    const faviconMatch = html.match(/<link[^>]*rel=["'](?:icon|shortcut icon|apple-touch-icon)["'][^>]*href=["']([^"']+)["']/i);
-    if (faviconMatch) {
-      const faviconPath = faviconMatch[1];
-      if (faviconPath.startsWith('http')) {
-        metadata.favicon = faviconPath;
-      } else if (faviconPath.startsWith('//')) {
-        metadata.favicon = urlObj.protocol + faviconPath;
-      } else if (faviconPath.startsWith('/')) {
-        metadata.favicon = `${urlObj.protocol}//${urlObj.host}${faviconPath}`;
-      } else {
-        metadata.favicon = `${urlObj.protocol}//${urlObj.host}/${faviconPath}`;
-      }
-    } else {
-      // Default favicon location
-      metadata.favicon = `${urlObj.protocol}//${urlObj.host}/favicon.ico`;
-    }
+    // Make URLs absolute
+    metadata.image = makeUrlAbsolute(metadata.image, originalUrl);
+    metadata.favicon = makeUrlAbsolute(metadata.favicon, originalUrl);
 
-    console.log('Metadata fetched successfully:', metadata);
-    return metadata;
+    // Clean up text
+    metadata.title = metadata.title.trim();
+    metadata.description = metadata.description.trim();
+
+  } catch (error) {
+    console.error('Error extracting metadata from HTML:', error);
+  }
+
+  return metadata;
+}
+
+// Make relative URLs absolute
+function makeUrlAbsolute(url, baseUrl) {
+  if (!url) return '';
+  
+  try {
+    // If URL is already absolute
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+    
+    const base = new URL(baseUrl);
+    
+    // If URL is protocol-relative
+    if (url.startsWith('//')) {
+      return base.protocol + url;
+    }
+    
+    // If URL is absolute path
+    if (url.startsWith('/')) {
+      return base.origin + url;
+    }
+    
+    // If URL is relative path
+    return base.origin + '/' + url;
     
   } catch (error) {
-    console.log('Metadata fetch error:', error.message);
-    
-    // Try to get at least favicon from common location
-    try {
-      const urlObj = new URL(url);
-      metadata.favicon = `${urlObj.protocol}//${urlObj.host}/favicon.ico`;
-    } catch (faviconError) {
-      console.error('Favicon fallback error:', faviconError);
-    }
-    
-    return metadata;
+    console.error('Error making URL absolute:', error);
+    return url;
   }
 }
 
-// Helper function to extract title tag
-function extractMetaTag(html, name) {
-  if (name === 'title') {
-    const match = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-    return match ? match[1].trim() : '';
-  }
-  
-  const patterns = [
-    new RegExp(`<meta[^>]*name=["']${name}["'][^>]*content=["']([^"']+)["']`, 'i'),
-    new RegExp(`<meta[^>]*content=["']([^"']+)["'][^>]*name=["']${name}["']`, 'i')
-  ];
-  
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match) return match[1].trim();
-  }
-  
-  return '';
-}
-
-// Helper function to extract Open Graph tags
-function extractOGTag(html, property) {
-  const patterns = [
-    new RegExp(`<meta[^>]*property=["']${property}["'][^>]*content=["']([^"']+)["']`, 'i'),
-    new RegExp(`<meta[^>]*content=["']([^"']+)["'][^>]*property=["']${property}["']`, 'i')
-  ];
-  
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match) return match[1].trim();
-  }
-  
-  return '';
-}
-
-// Helper function to extract Twitter Card tags
-function extractTwitterTag(html, name) {
-  const patterns = [
-    new RegExp(`<meta[^>]*name=["']${name}["'][^>]*content=["']([^"']+)["']`, 'i'),
-    new RegExp(`<meta[^>]*content=["']([^"']+)["'][^>]*name=["']${name}["']`, 'i')
-  ];
-  
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match) return match[1].trim();
-  }
-  
-  return '';
-}
-
-// Generate random short code
+// Generate short code for fallback URLs
 function generateShortCode(length = 6) {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let code = '';
@@ -291,16 +309,25 @@ function generateShortCode(length = 6) {
   return code;
 }
 
-// Handle context menu clicks
+// Context menu click handler
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'shortenUrl') {
-    const urlToShorten = info.linkUrl || info.pageUrl;
-    if (urlToShorten) {
-      // Store the URL to be shortened
-      chrome.storage.local.set({ pendingUrl: urlToShorten }, () => {
-        // Open popup
-        chrome.action.openPopup();
-      });
+    let urlToShorten;
+    
+    if (info.linkUrl) {
+      urlToShorten = info.linkUrl;
+    } else if (info.pageUrl) {
+      urlToShorten = info.pageUrl;
+    } else {
+      console.error('No URL found for context menu');
+      return;
     }
+    
+    console.log('Context menu shortening:', urlToShorten);
+    
+    // Store the URL and open popup
+    chrome.storage.local.set({ pendingUrl: urlToShorten }, () => {
+      chrome.action.openPopup();
+    });
   }
 });

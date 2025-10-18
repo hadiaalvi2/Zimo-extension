@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ZIMO URL Shortener",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Shorten URLs instantly with metadata extraction and history tracking",
   "permissions": [
     "activeTab",
@@ -30,6 +30,13 @@
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   }
