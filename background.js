@@ -49,11 +49,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// Shorten URL with multiple fallbacks
+// Shorten URL with multiple services
 async function shortenUrlInBackground(url) {
   console.log('Background: Attempting to shorten URL:', url);
   
-  // Method 1: Try TinyURL
+  // Method 1: TinyURL
   try {
     console.log('Trying TinyURL...');
     const controller = new AbortController();
@@ -62,9 +62,7 @@ async function shortenUrlInBackground(url) {
     const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`, {
       method: 'GET',
       signal: controller.signal,
-      headers: {
-        'Accept': 'text/plain'
-      }
+      headers: { 'Accept': 'text/plain' }
     });
     
     clearTimeout(timeoutId);
@@ -80,7 +78,7 @@ async function shortenUrlInBackground(url) {
     console.log('TinyURL error:', error.message);
   }
 
-  // Method 2: Try is.gd
+  // Method 2: is.gd
   try {
     console.log('Trying is.gd...');
     const controller = new AbortController();
@@ -104,7 +102,7 @@ async function shortenUrlInBackground(url) {
     console.log('is.gd error:', error.message);
   }
 
-  // Method 3: Try v.gd
+  // Method 3: v.gd
   try {
     console.log('Trying v.gd...');
     const controller = new AbortController();
@@ -133,7 +131,7 @@ async function shortenUrlInBackground(url) {
   return `https://zimo.ws/${generateShortCode()}`;
 }
 
-// Fetch metadata using CORS proxy
+// Fetch metadata using CORS proxy (AllOrigins)
 async function fetchMetadataInBackground(url, tabInfo = {}) {
   console.log('Background: Fetching metadata for:', url);
   
@@ -159,11 +157,10 @@ async function fetchMetadataInBackground(url, tabInfo = {}) {
 
   // Try CORS proxy approach
   try {
-    console.log('Trying CORS proxy...');
+    console.log('Trying CORS proxy (AllOrigins)...');
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
     
-    // Use a reliable CORS proxy
     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
     const response = await fetch(proxyUrl, {
       method: 'GET',
@@ -179,7 +176,6 @@ async function fetchMetadataInBackground(url, tabInfo = {}) {
       if (html) {
         const extracted = extractMetadataFromHTML(html, url);
         
-        // Only update if we got meaningful data
         if (extracted.title && extracted.title !== metadata.title) {
           metadata.title = extracted.title;
         }
@@ -200,7 +196,7 @@ async function fetchMetadataInBackground(url, tabInfo = {}) {
     console.log('CORS proxy error:', error.message);
   }
 
-  console.log('Final metadata:', metadata);
+  console.log('Final metadata from background:', metadata);
   return metadata;
 }
 
@@ -214,48 +210,65 @@ function extractMetadataFromHTML(html, originalUrl) {
   };
 
   try {
-    // Create a temporary div to parse HTML
+    // Create temporary div for parsing
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = html;
     
-    // Helper function to get meta content
-    const getMetaContent = (name, property) => {
-      const selector = property ? 
-        `meta[property="${name}"], meta[name="${name}"]` : 
-        `meta[name="${name}"]`;
-      const meta = tempDiv.querySelector(selector);
-      return meta ? meta.getAttribute('content') : '';
-    };
-
-    // Extract title
-    const ogTitle = getMetaContent('og:title', true);
-    const twitterTitle = getMetaContent('twitter:title', true);
-    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-    const documentTitle = titleMatch ? titleMatch[1].trim() : '';
+    // Extract title - priority: OG > Twitter > Document Title
+    let ogTitle = '';
+    let twitterTitle = '';
+    let docTitle = '';
     
-    metadata.title = ogTitle || twitterTitle || documentTitle;
-
-    // Extract description
-    const ogDesc = getMetaContent('og:description', true);
-    const twitterDesc = getMetaContent('twitter:description', true);
-    const metaDesc = getMetaContent('description', false);
+    // Try OG title
+    const ogTitleMeta = tempDiv.querySelector('meta[property="og:title"]');
+    if (ogTitleMeta) ogTitle = ogTitleMeta.getAttribute('content') || '';
     
-    metadata.description = ogDesc || twitterDesc || metaDesc;
+    // Try Twitter title
+    const twitterTitleMeta = tempDiv.querySelector('meta[name="twitter:title"]');
+    if (twitterTitleMeta) twitterTitle = twitterTitleMeta.getAttribute('content') || '';
+    
+    // Try document title
+    const titleTag = tempDiv.querySelector('title');
+    if (titleTag) docTitle = titleTag.textContent.trim();
+    
+    metadata.title = ogTitle || twitterTitle || docTitle || '';
 
-    // Extract image
-    const ogImage = getMetaContent('og:image', true);
-    const twitterImage = getMetaContent('twitter:image', true);
-    metadata.image = ogImage || twitterImage;
+    // Extract description - priority: OG > Meta Description > Twitter
+    let ogDesc = '';
+    let metaDesc = '';
+    let twitterDesc = '';
+    
+    const ogDescMeta = tempDiv.querySelector('meta[property="og:description"]');
+    if (ogDescMeta) ogDesc = ogDescMeta.getAttribute('content') || '';
+    
+    const metaDescTag = tempDiv.querySelector('meta[name="description"]');
+    if (metaDescTag) metaDesc = metaDescTag.getAttribute('content') || '';
+    
+    const twitterDescMeta = tempDiv.querySelector('meta[name="twitter:description"]');
+    if (twitterDescMeta) twitterDesc = twitterDescMeta.getAttribute('content') || '';
+    
+    metadata.description = ogDesc || metaDesc || twitterDesc || '';
+    metadata.description = metadata.description.substring(0, 300).trim();
+
+    // Extract image - priority: OG > Twitter
+    let ogImage = '';
+    let twitterImage = '';
+    
+    const ogImageMeta = tempDiv.querySelector('meta[property="og:image"]');
+    if (ogImageMeta) ogImage = ogImageMeta.getAttribute('content') || '';
+    
+    const twitterImageMeta = tempDiv.querySelector('meta[name="twitter:image"]');
+    if (twitterImageMeta) twitterImage = twitterImageMeta.getAttribute('content') || '';
+    
+    let imageUrl = ogImage || twitterImage || '';
+    metadata.image = makeUrlAbsolute(imageUrl, originalUrl);
 
     // Extract favicon
-    const faviconMatch = html.match(/<link[^>]*rel=(["'])?(?:icon|shortcut icon|apple-touch-icon)(["'])?[^>]*href=(["'])([^"']+)\3/i);
-    if (faviconMatch && faviconMatch[4]) {
-      metadata.favicon = faviconMatch[4];
+    const iconLink = tempDiv.querySelector('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]');
+    if (iconLink) {
+      const href = iconLink.getAttribute('href') || '';
+      metadata.favicon = makeUrlAbsolute(href, originalUrl);
     }
-
-    // Make URLs absolute
-    metadata.image = makeUrlAbsolute(metadata.image, originalUrl);
-    metadata.favicon = makeUrlAbsolute(metadata.favicon, originalUrl);
 
     // Clean up text
     metadata.title = metadata.title.trim();
@@ -273,24 +286,20 @@ function makeUrlAbsolute(url, baseUrl) {
   if (!url) return '';
   
   try {
-    // If URL is already absolute
     if (url.startsWith('http://') || url.startsWith('https://')) {
       return url;
     }
     
     const base = new URL(baseUrl);
     
-    // If URL is protocol-relative
     if (url.startsWith('//')) {
       return base.protocol + url;
     }
     
-    // If URL is absolute path
     if (url.startsWith('/')) {
       return base.origin + url;
     }
     
-    // If URL is relative path
     return base.origin + '/' + url;
     
   } catch (error) {
@@ -299,7 +308,7 @@ function makeUrlAbsolute(url, baseUrl) {
   }
 }
 
-// Generate short code for fallback URLs
+// Generate short code for fallback
 function generateShortCode(length = 6) {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let code = '';
@@ -325,7 +334,6 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     
     console.log('Context menu shortening:', urlToShorten);
     
-    // Store the URL and open popup
     chrome.storage.local.set({ pendingUrl: urlToShorten }, () => {
       chrome.action.openPopup();
     });

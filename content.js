@@ -1,4 +1,6 @@
-// content.js - Content Script for Metadata Extraction
+// content.js - Enhanced Content Script for Metadata Extraction
+
+console.log('ZIMO Content Script: Loaded');
 
 // Listen for messages from popup or background
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -18,7 +20,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// Extract metadata from the current page
+// Main metadata extraction function
 function extractPageMetadata() {
   const metadata = {
     title: '',
@@ -26,278 +28,203 @@ function extractPageMetadata() {
     image: '',
     favicon: '',
     siteName: '',
-    author: ''
+    author: '',
+    url: window.location.href
   };
 
   try {
-    // Helper function to get meta content
-    const getMetaContent = (name, property = false) => {
-      if (property) {
-        const meta = document.querySelector(`meta[property="${name}"]`);
-        return meta ? meta.content : '';
-      } else {
-        const meta = document.querySelector(`meta[name="${name}"]`);
-        return meta ? meta.content : '';
-      }
+    // Helper: Get meta content by name or property
+    const getMetaContent = (selector) => {
+      const meta = document.querySelector(selector);
+      return meta ? (meta.getAttribute('content') || meta.textContent).trim() : '';
     };
 
-    // Helper function to make URL absolute
-    const makeUrlAbsolute = (url) => {
+    // Helper: Make URL absolute
+    const makeAbsolute = (url) => {
       if (!url) return '';
       if (url.startsWith('http://') || url.startsWith('https://')) return url;
       if (url.startsWith('//')) return window.location.protocol + url;
       if (url.startsWith('/')) return window.location.origin + url;
-      return window.location.origin + '/' + url.replace(/^\.?\//, '');
+      if (url.startsWith('./')) return window.location.origin + url.substring(1);
+      return window.location.origin + '/' + url;
     };
 
-    // Extract title (multiple sources, prioritized)
-    const ogTitle = getMetaContent('og:title', true);
-    const twitterTitle = getMetaContent('twitter:title', true);
-    const titleTag = document.querySelector('title');
-    const h1Tag = document.querySelector('h1');
+    // ===== EXTRACT TITLE (Priority: OG > Twitter > Document > H1) =====
+    const ogTitle = getMetaContent('meta[property="og:title"]');
+    const twitterTitle = getMetaContent('meta[name="twitter:title"]');
+    const documentTitle = document.title?.trim() || '';
+    const h1Title = document.querySelector('h1')?.textContent?.trim() || '';
     
-    metadata.title = ogTitle || 
-                     twitterTitle || 
-                     (titleTag?.textContent?.trim()) ||
-                     (h1Tag?.textContent?.trim()) ||
-                     document.title || 
-                     '';
+    metadata.title = ogTitle || twitterTitle || documentTitle || h1Title || '';
 
-    // If no title found, try to create one from URL
-    if (!metadata.title) {
+    // ===== EXTRACT DESCRIPTION (Priority: OG > Meta > Twitter > First Para) =====
+    const ogDesc = getMetaContent('meta[property="og:description"]');
+    const metaDesc = getMetaContent('meta[name="description"]');
+    const twitterDesc = getMetaContent('meta[name="twitter:description"]');
+    
+    let firstParagraphDesc = '';
+    try {
+      const paragraphs = document.querySelectorAll('article p, main p, .content p, p');
+      for (const p of paragraphs) {
+        const text = p.textContent?.trim();
+        if (text && text.length > 30 && text.length < 400 && !text.includes('<')) {
+          firstParagraphDesc = text;
+          break;
+        }
+      }
+    } catch (e) {
+      console.log('Error extracting paragraph:', e);
+    }
+    
+    metadata.description = ogDesc || metaDesc || twitterDesc || firstParagraphDesc || '';
+    metadata.description = metadata.description.substring(0, 300).trim();
+
+    // ===== EXTRACT IMAGE (Priority: OG > Twitter > First Large Image) =====
+    const ogImage = getMetaContent('meta[property="og:image"]');
+    const ogImageSecure = getMetaContent('meta[property="og:image:secure_url"]');
+    const twitterImage = getMetaContent('meta[name="twitter:image"]');
+    const twitterImageSrc = getMetaContent('meta[name="twitter:image:src"]');
+    
+    let imageUrl = ogImage || ogImageSecure || twitterImage || twitterImageSrc || '';
+    
+    // If no meta image, find first suitable image
+    if (!imageUrl) {
       try {
-        const url = new URL(window.location.href);
-        const domain = url.hostname.replace('www.', '');
-        const path = url.pathname.split('/').filter(p => p).join(' - ');
-        metadata.title = path ? `${domain} - ${path}` : domain;
-      } catch (e) {
-        metadata.title = 'Untitled Page';
-      }
-    }
-
-    // Extract description (multiple sources)
-    const ogDesc = getMetaContent('og:description', true);
-    const twitterDesc = getMetaContent('twitter:description', true);
-    const metaDesc = getMetaContent('description', false);
-    
-    // Try to get description from first meaningful paragraph
-    let firstParagraph = '';
-    const paragraphs = document.querySelectorAll('p');
-    for (let p of paragraphs) {
-      const text = p.textContent.trim();
-      if (text.length > 50 && text.length < 300) {
-        firstParagraph = text;
-        break;
-      }
-    }
-
-    metadata.description = ogDesc || 
-                          twitterDesc || 
-                          metaDesc ||
-                          firstParagraph ||
-                          '';
-
-    // Clean up description
-    metadata.description = metadata.description.replace(/\s+/g, ' ').trim().substring(0, 300);
-
-    // Extract image (multiple sources)
-    const ogImage = getMetaContent('og:image', true);
-    const twitterImage = getMetaContent('twitter:image', true);
-    const ogImageUrl = getMetaContent('og:image:url', true);
-    const twitterImageSrc = getMetaContent('twitter:image:src', true);
-    
-    let imageUrl = ogImage || 
-                   twitterImage || 
-                   ogImageUrl ||
-                   twitterImageSrc ||
-                   '';
-
-    // Make image URL absolute
-    metadata.image = makeUrlAbsolute(imageUrl);
-
-    // If no OG image found, try to find the first large image on the page
-    if (!metadata.image) {
-      const images = document.querySelectorAll('img[src]');
-      for (let img of images) {
-        const src = img.getAttribute('src');
-        // Check if it's a reasonable image (not too small, not a tracking pixel)
-        if (src && !src.includes('pixel') && !src.includes('track') && 
-            !src.includes('icon') && !src.includes('logo')) {
-          const width = img.naturalWidth || img.offsetWidth;
-          const height = img.naturalHeight || img.offsetHeight;
+        const images = document.querySelectorAll('img[src], img[data-src]');
+        for (const img of images) {
+          const src = img.src || img.getAttribute('data-src');
+          
+          // Skip tracking pixels, icons, logos
+          if (!src || src.includes('pixel') || src.includes('track') || 
+              src.includes('icon') || src.includes('logo') || src.includes('avatar') ||
+              src.includes('data:') || src.length < 10) {
+            continue;
+          }
+          
+          const width = img.naturalWidth || img.offsetWidth || 0;
+          const height = img.naturalHeight || img.offsetHeight || 0;
+          
           if (width > 100 && height > 100) {
-            metadata.image = makeUrlAbsolute(src);
+            imageUrl = src;
             break;
           }
         }
+      } catch (e) {
+        console.log('Error finding image:', e);
       }
     }
+    
+    metadata.image = makeAbsolute(imageUrl);
 
-    // Extract favicon (multiple possible locations)
+    // ===== EXTRACT FAVICON =====
     const iconSelectors = [
       'link[rel="icon"]',
       'link[rel="shortcut icon"]',
       'link[rel="apple-touch-icon"]',
       'link[rel="apple-touch-icon-precomposed"]',
-      'link[rel="mask-icon"]',
-      'link[rel="fluid-icon"]'
+      'link[rel="mask-icon"]'
     ];
-
+    
     let faviconUrl = '';
-    for (let selector of iconSelectors) {
+    for (const selector of iconSelectors) {
       const link = document.querySelector(selector);
       if (link?.href) {
         faviconUrl = link.href;
         break;
       }
     }
-
-    // If no favicon found in meta tags, try default locations
+    
+    // Fallback to standard favicon location
     if (!faviconUrl) {
-      faviconUrl = `${window.location.origin}/favicon.ico`;
+      faviconUrl = window.location.origin + '/favicon.ico';
     } else {
-      faviconUrl = makeUrlAbsolute(faviconUrl);
+      faviconUrl = makeAbsolute(faviconUrl);
     }
-
+    
     metadata.favicon = faviconUrl;
 
-    // Extract additional metadata
-    metadata.siteName = getMetaContent('og:site_name', true) || '';
-    metadata.author = getMetaContent('author', false) || 
-                     getMetaContent('twitter:creator', true) || 
-                     '';
+    // ===== EXTRACT ADDITIONAL METADATA =====
+    metadata.siteName = getMetaContent('meta[property="og:site_name"]');
+    metadata.author = getMetaContent('meta[name="author"]') || 
+                     getMetaContent('meta[property="article:author"]') ||
+                     getMetaContent('meta[name="twitter:creator"]');
 
-    // Extract canonical URL
-    const canonicalLink = document.querySelector('link[rel="canonical"]');
-    if (canonicalLink?.href) {
-      metadata.canonicalUrl = canonicalLink.href;
+    // Canonical URL
+    const canonical = document.querySelector('link[rel="canonical"]');
+    if (canonical?.href) {
+      metadata.canonicalUrl = canonical.href;
     }
 
-    // Extract language
-    const htmlLang = document.documentElement.getAttribute('lang');
+    // Language
+    const htmlLang = document.documentElement.getAttribute('lang') || 
+                    getMetaContent('meta[http-equiv="content-language"]');
     if (htmlLang) {
-      metadata.language = htmlLang;
+      metadata.language = htmlLang.split('-')[0];
     }
 
-    // Extract published time if available
-    const publishedTime = getMetaContent('article:published_time', true) ||
-                         getMetaContent('og:published_time', true);
-    if (publishedTime) {
-      metadata.publishedTime = publishedTime;
-    }
+    // Published time
+    metadata.publishedTime = getMetaContent('meta[property="article:published_time"]') ||
+                            getMetaContent('meta[itemprop="datePublished"]');
 
-    console.log('Content script: Successfully extracted metadata:', {
-      title: metadata.title,
-      description: metadata.description ? metadata.description.substring(0, 100) + '...' : 'empty',
-      image: metadata.image ? '✓' : '✗',
-      favicon: metadata.favicon ? '✓' : '✗'
+    // Clean up all strings
+    Object.keys(metadata).forEach(key => {
+      if (typeof metadata[key] === 'string') {
+        metadata[key] = metadata[key].trim();
+      }
+    });
+
+    console.log('✓ Metadata extracted successfully:', {
+      title: metadata.title ? '✓' : '✗',
+      description: metadata.description ? '✓' : '✗',
+      image: metadata.image && metadata.image.startsWith('http') ? '✓' : '✗',
+      favicon: metadata.favicon && metadata.favicon.startsWith('http') ? '✓' : '✗'
     });
 
   } catch (error) {
-    console.error('Content script: Error in extractPageMetadata:', error);
+    console.error('Error in extractPageMetadata:', error);
     
-    // Fallback: return at least basic information
-    metadata.title = document.title || 'Untitled Page';
-    metadata.favicon = `${window.location.origin}/favicon.ico`;
-    
+    // Fallback extraction
     try {
-      const url = new URL(window.location.href);
-      const domain = url.hostname.replace('www.', '');
-      if (!metadata.title || metadata.title === 'Untitled Page') {
-        metadata.title = domain;
-      }
+      metadata.title = document.title || 'Untitled';
+      metadata.favicon = window.location.origin + '/favicon.ico';
     } catch (e) {
-      // Ignore URL parsing errors
+      console.error('Fallback error:', e);
     }
   }
 
   return metadata;
 }
 
-// Enhanced metadata extraction for specific content types
-function extractEnhancedMetadata() {
-  const enhanced = {
-    isArticle: false,
-    readingTime: 0,
-    wordCount: 0
-  };
-
-  try {
-    // Check if it's an article
-    const article = document.querySelector('article');
-    if (article) {
-      enhanced.isArticle = true;
-      
-      // Calculate reading time
-      const text = article.textContent || '';
-      const wordCount = text.split(/\s+/).length;
-      enhanced.wordCount = wordCount;
-      enhanced.readingTime = Math.ceil(wordCount / 200); // 200 words per minute
-    }
-
-    // Check for schema.org markup
-    const schemaScripts = document.querySelectorAll('script[type="application/ld+json"]');
-    for (let script of schemaScripts) {
-      try {
-        const schema = JSON.parse(script.textContent);
-        if (schema['@type'] === 'Article' || schema['@type'] === 'NewsArticle') {
-          enhanced.isArticle = true;
-          if (schema.headline) enhanced.schemaTitle = schema.headline;
-          if (schema.description) enhanced.schemaDescription = schema.description;
-          if (schema.image) enhanced.schemaImage = schema.image;
-          if (schema.datePublished) enhanced.schemaPublished = schema.datePublished;
-          break;
-        }
-      } catch (e) {
-        // Ignore JSON parsing errors
-      }
-    }
-  } catch (error) {
-    console.error('Content script: Error in extractEnhancedMetadata:', error);
+// Auto-extract metadata on page load
+function initializeMetadataExtraction() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('Content script: DOM loaded - caching metadata');
+      setTimeout(() => extractPageMetadata(), 500);
+    });
+  } else {
+    console.log('Content script: Page ready - caching metadata');
+    setTimeout(() => extractPageMetadata(), 300);
   }
-
-  return enhanced;
 }
 
-// Auto-extract and cache metadata on page load
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    console.log('Content script: DOM loaded - extracting metadata');
-    // Cache metadata for potential future use
-    setTimeout(() => {
-      const metadata = extractPageMetadata();
-      const enhanced = extractEnhancedMetadata();
-      console.log('Content script: Auto-extracted metadata cached');
-    }, 1000);
-  });
-} else {
-  // DOM already loaded
-  console.log('Content script: Page already loaded - extracting metadata');
-  setTimeout(() => {
-    const metadata = extractPageMetadata();
-    const enhanced = extractEnhancedMetadata();
-    console.log('Content script: Auto-extracted metadata cached');
-  }, 500);
-}
+// Initialize
+initializeMetadataExtraction();
 
-// Listen for page changes (SPA navigation)
+// Handle SPA navigation
 let lastUrl = window.location.href;
 new MutationObserver(() => {
   const url = window.location.href;
   if (url !== lastUrl) {
     lastUrl = url;
-    console.log('Content script: URL changed, re-extracting metadata');
-    setTimeout(() => {
-      const metadata = extractPageMetadata();
-      console.log('Content script: Re-extracted metadata after navigation');
-    }, 1000);
+    console.log('Content script: URL changed - re-extracting metadata');
+    setTimeout(() => extractPageMetadata(), 1000);
   }
 }).observe(document, { subtree: true, childList: true });
 
-// Export functions for direct access (if needed)
-window.ZIMOContentScript = {
-  extractPageMetadata,
-  extractEnhancedMetadata
+// Export for debugging
+window.ZIMOMetadata = {
+  extract: extractPageMetadata
 };
 
-console.log('Content script: ZIMO URL Shortener content script loaded');
+console.log('ZIMO Content Script: Ready');

@@ -66,16 +66,6 @@ function setupEventListeners() {
       historyIcon.addEventListener('click', toggleView);
     }
     
-    // QR Code functionality
-    const qrBtn = document.getElementById('qrBtn');
-    if (qrBtn) {
-      qrBtn.addEventListener('click', () => {
-        if (currentUrlData?.shortUrl) {
-          showQRModal(currentUrlData.shortUrl);
-        }
-      });
-    }
-    
     console.log('All event listeners attached');
   } catch (error) {
     console.error('Error in setupEventListeners:', error);
@@ -113,9 +103,9 @@ async function shortenCurrentTabUrl() {
       throw new Error('Cannot shorten this type of URL (chrome://, file://, etc.)');
     }
 
-    // Get metadata using content script (most reliable method)
+    // Get metadata using multiple methods
     console.log('Step 1: Fetching metadata...');
-    let metadata = await extractMetadataFromCurrentTab(tab);
+    let metadata = await extractMetadataOptimized(tab);
     console.log('Metadata fetched:', metadata);
 
     // Shorten URL
@@ -155,113 +145,183 @@ async function shortenCurrentTabUrl() {
   }
 }
 
-// Extract metadata from current tab using content script
-async function extractMetadataFromCurrentTab(tab) {
-  console.log('Extracting metadata from current tab...');
+// Optimized metadata extraction with priority-based fallback
+async function extractMetadataOptimized(tab) {
+  console.log('Starting optimized metadata extraction...');
   
-  const metadata = {
-    title: '',
+  const defaultMetadata = {
+    title: tab.title || extractTitleFromUrl(tab.url),
     description: '',
     image: '',
-    favicon: ''
+    favicon: tab.favIconUrl || getFaviconFromUrl(tab.url)
   };
 
+  // Method 1: Content Script (Most Reliable - Direct DOM Access)
   try {
-    // Execute content script in the current tab to extract metadata
+    console.log('Method 1: Trying content script execution...');
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: () => {
-        const getMetaContent = (name, property) => {
-          const meta = document.querySelector(`meta[${property}="${name}"]`) || 
-                      document.querySelector(`meta[name="${name}"]`);
-          return meta ? meta.content : '';
-        };
-
-        const getLinkHref = (rel) => {
-          const link = document.querySelector(`link[rel="${rel}"]`) ||
-                      document.querySelector(`link[rel*="${rel}"]`);
-          return link ? link.href : '';
-        };
-
-        // Extract title
-        const ogTitle = getMetaContent('og:title', 'property');
-        const twitterTitle = getMetaContent('twitter:title', 'name');
-        const title = ogTitle || twitterTitle || document.title;
-
-        // Extract description
-        const ogDesc = getMetaContent('og:description', 'property');
-        const twitterDesc = getMetaContent('twitter:description', 'name');
-        const metaDesc = getMetaContent('description', 'name');
-        const description = ogDesc || twitterDesc || metaDesc;
-
-        // Extract image
-        const ogImage = getMetaContent('og:image', 'property');
-        const twitterImage = getMetaContent('twitter:image', 'name');
-        const image = ogImage || twitterImage;
-
-        // Extract favicon
-        const favicon = getLinkHref('icon') || getLinkHref('shortcut icon') || 
-                       getLinkHref('apple-touch-icon') || '/favicon.ico';
-
-        // Make URLs absolute
-        const makeAbsolute = (url) => {
-          if (!url) return '';
-          if (url.startsWith('http')) return url;
-          if (url.startsWith('//')) return window.location.protocol + url;
-          if (url.startsWith('/')) return window.location.origin + url;
-          return window.location.origin + '/' + url;
-        };
-
-        return {
-          title: title || '',
-          description: description || '',
-          image: makeAbsolute(image),
-          favicon: makeAbsolute(favicon)
-        };
-      }
+      func: extractMetadataFromPage
     });
 
     if (results && results[0] && results[0].result) {
       const extracted = results[0].result;
-      console.log('Content script extraction result:', extracted);
+      console.log('Content script SUCCESS:', extracted);
       
-      // Use extracted data if we got meaningful results
-      if (extracted.title || extracted.description) {
-        return extracted;
+      if (extracted.title || extracted.description || extracted.image) {
+        return {
+          title: extracted.title || defaultMetadata.title,
+          description: extracted.description || '',
+          image: extracted.image || '',
+          favicon: extracted.favicon || defaultMetadata.favicon
+        };
       }
     }
   } catch (error) {
-    console.log('Content script extraction failed:', error.message);
-    
-    // Fallback to background script for CORS-enabled fetching
-    try {
-      console.log('Trying background script fallback...');
-      const response = await chrome.runtime.sendMessage({
+    console.log('Content script failed:', error.message);
+  }
+
+  // Method 2: Background Script with CORS Proxy
+  try {
+    console.log('Method 2: Trying background script with CORS proxy...');
+    const response = await Promise.race([
+      chrome.runtime.sendMessage({
         action: 'fetchMetadata',
         url: tab.url,
         tabInfo: {
           title: tab.title,
           favIconUrl: tab.favIconUrl
         }
-      });
+      }),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout')), 8000)
+      )
+    ]);
 
-      if (response && response.success && response.metadata) {
-        console.log('Background script metadata:', response.metadata);
-        return response.metadata;
-      }
-    } catch (bgError) {
-      console.log('Background script also failed:', bgError.message);
+    if (response && response.success && response.metadata) {
+      console.log('Background script SUCCESS:', response.metadata);
+      return {
+        title: response.metadata.title || defaultMetadata.title,
+        description: response.metadata.description || '',
+        image: response.metadata.image || '',
+        favicon: response.metadata.favicon || defaultMetadata.favicon
+      };
     }
+  } catch (error) {
+    console.log('Background script failed:', error.message);
   }
 
-  // Final fallback - use tab information
-  console.log('Using tab info as fallback metadata');
-  return {
-    title: tab.title || '',
+  // Fallback: Use tab data
+  console.log('Using tab data as fallback');
+  return defaultMetadata;
+}
+
+// Function injected into page for metadata extraction
+function extractMetadataFromPage() {
+  const meta = {
+    title: '',
+    favicon: '',
     description: '',
-    image: '',
-    favicon: tab.favIconUrl || getFaviconFromUrl(tab.url)
+    image: ''
   };
+
+  try {
+    // Title - priority: OG Title > Twitter Title > Document Title > H1
+    const ogTitle = document.querySelector('meta[property="og:title"]')?.content;
+    const twitterTitle = document.querySelector('meta[name="twitter:title"]')?.content;
+    const documentTitle = document.title;
+    const h1Title = document.querySelector('h1')?.textContent?.trim();
+    
+    meta.title = ogTitle || twitterTitle || documentTitle || h1Title || '';
+    
+    // Description - priority: OG > Meta Description > Twitter > First Paragraph
+    const ogDesc = document.querySelector('meta[property="og:description"]')?.content;
+    const metaDesc = document.querySelector('meta[name="description"]')?.content;
+    const twitterDesc = document.querySelector('meta[name="twitter:description"]')?.content;
+    
+    let firstParaDesc = '';
+    const paragraphs = document.querySelectorAll('p');
+    for (let p of paragraphs) {
+      const text = p.textContent?.trim();
+      if (text && text.length > 20 && text.length < 300) {
+        firstParaDesc = text;
+        break;
+      }
+    }
+    
+    meta.description = ogDesc || metaDesc || twitterDesc || firstParaDesc || '';
+    meta.description = meta.description.substring(0, 300);
+    
+    // Image - priority: OG Image > Twitter Image > First Large Image
+    const ogImage = document.querySelector('meta[property="og:image"]')?.content;
+    const twitterImage = document.querySelector('meta[name="twitter:image"]')?.content;
+    
+    meta.image = ogImage || twitterImage || '';
+    
+    // If no meta image, find first suitable image
+    if (!meta.image) {
+      const images = document.querySelectorAll('img[src]');
+      for (let img of images) {
+        const src = img.src;
+        if (src && !src.includes('pixel') && !src.includes('track') && 
+            !src.includes('icon') && !src.includes('logo') && !src.includes('avatar')) {
+          const width = img.naturalWidth || img.offsetWidth || 0;
+          const height = img.naturalHeight || img.offsetHeight || 0;
+          if (width > 100 && height > 100) {
+            meta.image = src;
+            break;
+          }
+        }
+      }
+    }
+    
+    // Favicon - multiple sources
+    const iconLinks = [
+      'link[rel="icon"]',
+      'link[rel="shortcut icon"]',
+      'link[rel="apple-touch-icon"]',
+      'link[rel="apple-touch-icon-precomposed"]'
+    ];
+    
+    for (let selector of iconLinks) {
+      const link = document.querySelector(selector);
+      if (link?.href) {
+        meta.favicon = link.href;
+        break;
+      }
+    }
+    
+    if (!meta.favicon) {
+      meta.favicon = window.location.origin + '/favicon.ico';
+    }
+    
+    // Make URLs absolute
+    meta.image = makeUrlAbsolute(meta.image, window.location.href);
+    meta.favicon = makeUrlAbsolute(meta.favicon, window.location.href);
+    
+    // Clean up whitespace
+    meta.title = meta.title.trim();
+    meta.description = meta.description.trim();
+    
+  } catch (e) {
+    console.error('Extract error:', e);
+  }
+
+  return meta;
+}
+
+// Make URL absolute helper
+function makeUrlAbsolute(url, baseUrl) {
+  if (!url) return '';
+  
+  try {
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    if (url.startsWith('//')) return new URL(baseUrl).protocol + url;
+    if (url.startsWith('/')) return new URL(baseUrl).origin + url;
+    return new URL(baseUrl).origin + '/' + url;
+  } catch (e) {
+    return url;
+  }
 }
 
 // Extract favicon URL from domain
@@ -300,7 +360,6 @@ async function shortenUrlWithTimeout(url, timeout = 10000) {
 async function shortenUrl(url) {
   console.log('Shortening URL:', url);
   
-  // Try background script first
   try {
     const response = await chrome.runtime.sendMessage({
       action: 'shortenUrl',
@@ -315,7 +374,6 @@ async function shortenUrl(url) {
     console.log('Background failed:', error.message);
   }
 
-  // Fallback
   return `https://zimo.ws/${generateShortCode()}`;
 }
 
@@ -338,54 +396,28 @@ function displayUrlData(data) {
     mainCard.style.display = 'block';
   }
   
-  // Logo and favicon
   try {
     const domain = new URL(data.originalUrl).hostname.replace('www.', '');
     const logoText = domain.split('.')[0].substring(0, 3).toUpperCase();
     const logoEl = document.getElementById('sourceLogo');
     if (logoEl) logoEl.textContent = logoText;
-    
-    // Set favicon if available
-    if (data.favicon) {
-      const faviconEl = document.getElementById('pageFavicon');
-      if (faviconEl) {
-        faviconEl.src = data.favicon;
-        faviconEl.style.display = 'block';
-        faviconEl.onerror = function() {
-          this.style.display = 'none';
-        };
-      }
-    }
   } catch (e) {
     const logoEl = document.getElementById('sourceLogo');
     if (logoEl) logoEl.textContent = 'URL';
   }
   
-  // Short URL
   const shortUrlEl = document.getElementById('shortUrl');
   if (shortUrlEl) {
     shortUrlEl.textContent = data.shortUrl;
     shortUrlEl.title = 'Click to copy: ' + data.shortUrl;
   }
   
-  // Title
   const titleEl = document.getElementById('pageTitle');
   if (titleEl) titleEl.textContent = data.title;
   
-  // Description (if available)
-  if (data.description) {
-    const descEl = document.getElementById('pageDescription');
-    if (descEl) {
-      descEl.textContent = data.description;
-      descEl.style.display = 'block';
-    }
-  }
-  
-  // Original URL
   const originalEl = document.getElementById('originalUrl');
   if (originalEl) originalEl.textContent = data.originalUrl;
   
-  // Timestamp
   const date = new Date(data.timestamp);
   const timeEl = document.getElementById('timeDisplay');
   const dateEl = document.getElementById('dateDisplay');
@@ -519,7 +551,6 @@ function displayHistory() {
     historyList.appendChild(wrapper);
   });
   
-  // Event listeners
   document.querySelectorAll('.history-item-wrapper .short-url').forEach(el => {
     el.addEventListener('click', (e) => {
       copyToClipboard(e.target.getAttribute('data-url'));
@@ -671,14 +702,13 @@ function showError(message) {
   }
 }
 
-// QR Code Generator Function
+// QR Code Generator
 function generateQRCode(text) {
   const size = 200;
-  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(text)}`;
-  return qrApiUrl;
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(text)}`;
 }
 
-// QR Modal Function
+// QR Modal
 function showQRModal(url) {
   const modal = document.createElement('div');
   modal.className = 'qr-modal';
@@ -723,7 +753,7 @@ function showQRModal(url) {
       URL.revokeObjectURL(downloadUrl);
     } catch (err) {
       console.error('Download failed:', err);
-      alert('Failed to download QR code. Please try right-clicking on the image and saving it.');
+      alert('Failed to download QR code. Please try right-clicking and saving.');
     }
   });
 }
