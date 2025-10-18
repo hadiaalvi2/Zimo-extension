@@ -1,46 +1,35 @@
 {
   "manifest_version": 3,
-  "name": "URL Shortener",
-  "version": "1.0",
-  "description": "Shorten URLs with one click and rich previews",
+  "name": "ZIMO URL Shortener",
+  "version": "1.0.0",
+  "description": "Shorten URLs instantly with metadata extraction and history tracking",
   "permissions": [
     "activeTab",
-    "scripting",
     "storage",
-    "notifications",
-    "contextMenus"
+    "scripting",
+    "tabs"
   ],
   "host_permissions": [
-    "https://is.gd/*",
-    "https://v.gd/*",
-    "https://tinyurl.com/*",
-    "https://wa.me/*",
-    "https://t.me/*",
-    "https://www.facebook.com/*",
-    "https://twitter.com/*",
-    "https://reddit.com/*",
-    "https://discord.com/*",
-    "https://bsky.app/*",
-    "https://www.threads.net/*",
-    "https://api.qrserver.com/*",
-    "https://*.youtube.com/*",
-    "https://youtu.be/*",
-    "<all_urls>"
+    "http://*/*",
+    "https://*/*"
   ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "assets/Extension+/Chrome Extension Icon.svg",
+      "48": "assets/Extension+/Chrome Extension Icon.svg",
+      "128": "assets/Extension+/Chrome Extension Icon.svg"
+    }
+  },
+  "icons": {
+    "16": "assets/Extension+/Chrome Extension Icon.svg",
+    "48": "assets/Extension+/Chrome Extension Icon.svg",
+    "128": "assets/Extension+/Chrome Extension Icon.svg"
+  },
   "background": {
     "service_worker": "background.js"
   },
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "URL Shortener"
-  },
-  "commands": {
-    "open-popup": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+U",
-        "mac": "Command+Shift+U"
-      },
-      "description": "Open URL Shortener popup"
-    }
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
   }
 }
