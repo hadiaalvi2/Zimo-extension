@@ -98,49 +98,58 @@ async function shortenCurrentTabUrl() {
       favIconUrl: tab.favIconUrl
     });
 
-    // Check if URL is valid
+    // Check if URL is valid - only allow http and https
     if (!tab.url.startsWith('http://') && !tab.url.startsWith('https://')) {
-      throw new Error('Cannot shorten this type of URL (chrome://, file://, etc.)');
+      showLoading(false);
+      showError('Cannot shorten this type of URL (chrome://, file://, etc.)');
+      return;
     }
 
-    // Get metadata using multiple methods
-    console.log('Step 1: Fetching metadata...');
-    let metadata = await extractMetadataOptimized(tab);
-    console.log('Metadata fetched:', metadata);
-
-    // Shorten URL
-    console.log('Step 2: Shortening URL...');
-    let shortUrl;
     try {
-      shortUrl = await shortenUrlWithTimeout(tab.url, 10000);
-      console.log('URL shortened successfully:', shortUrl);
+      // Get metadata using multiple methods
+      console.log('Step 1: Fetching metadata...');
+      let metadata = await extractMetadataOptimized(tab);
+      console.log('Metadata fetched:', metadata);
+
+      // Shorten URL
+      console.log('Step 2: Shortening URL...');
+      let shortUrl;
+      try {
+        shortUrl = await shortenUrlWithTimeout(tab.url, 10000);
+        console.log('URL shortened successfully:', shortUrl);
+      } catch (error) {
+        console.error('Shortening failed, using fallback:', error);
+        shortUrl = `https://zimo.ws/${generateShortCode()}`;
+      }
+      
+      // Create final data object
+      currentUrlData = {
+        originalUrl: tab.url,
+        shortUrl: shortUrl,
+        title: metadata.title || tab.title || extractTitleFromUrl(tab.url),
+        favicon: metadata.favicon || tab.favIconUrl || getFaviconFromUrl(tab.url),
+        description: metadata.description || '',
+        image: metadata.image || '',
+        timestamp: Date.now(),
+        clicks: 0
+      };
+
+      console.log('Final URL data:', currentUrlData);
+
+      // Display and save
+      displayUrlData(currentUrlData);
+      await saveToHistory(currentUrlData);
+      
+      showLoading(false);
+      console.log('=== SHORTENING COMPLETE ===');
     } catch (error) {
-      console.error('Shortening failed, using fallback:', error);
-      shortUrl = `https://zimo.ws/${generateShortCode()}`;
+      console.error('ERROR in metadata/shortening:', error);
+      showLoading(false);
+      showError(error.message || 'Failed to process URL');
     }
-    
-    // Create final data object
-    currentUrlData = {
-      originalUrl: tab.url,
-      shortUrl: shortUrl,
-      title: metadata.title || tab.title || extractTitleFromUrl(tab.url),
-      favicon: metadata.favicon || tab.favIconUrl || getFaviconFromUrl(tab.url),
-      description: metadata.description || '',
-      image: metadata.image || '',
-      timestamp: Date.now(),
-      clicks: 0
-    };
-
-    console.log('Final URL data:', currentUrlData);
-
-    // Display and save
-    displayUrlData(currentUrlData);
-    await saveToHistory(currentUrlData);
-    
-    showLoading(false);
-    console.log('=== SHORTENING COMPLETE ===');
   } catch (error) {
     console.error('ERROR in shortenCurrentTabUrl:', error);
+    showLoading(false);
     showError(error.message || 'Failed to process URL');
   }
 }
@@ -168,7 +177,7 @@ async function extractMetadataOptimized(tab) {
       const extracted = results[0].result;
       console.log('Content script SUCCESS:', extracted);
       
-      if (extracted.title || extracted.description || extracted.image) {
+      if (extracted.title || extracted.description || extracted.image || extracted.favicon) {
         return {
           title: extracted.title || defaultMetadata.title,
           description: extracted.description || '',
@@ -275,29 +284,59 @@ function extractMetadataFromPage() {
       }
     }
     
-    // Favicon - multiple sources
-    const iconLinks = [
-      'link[rel="icon"]',
-      'link[rel="shortcut icon"]',
-      'link[rel="apple-touch-icon"]',
-      'link[rel="apple-touch-icon-precomposed"]'
-    ];
+    // Favicon - Dynamic extraction with multiple sources
+    let faviconUrl = '';
     
-    for (let selector of iconLinks) {
-      const link = document.querySelector(selector);
-      if (link?.href) {
-        meta.favicon = link.href;
-        break;
+    // Priority 1: Try OG Image as favicon (many sites use this)
+    const ogImageFavicon = document.querySelector('meta[property="og:image"]')?.content;
+    if (ogImageFavicon) {
+      faviconUrl = makeUrlAbsolute(ogImageFavicon, window.location.href);
+    }
+    
+    // Priority 2: Try Twitter image as favicon
+    if (!faviconUrl) {
+      const twitterImageFavicon = document.querySelector('meta[name="twitter:image"]')?.content;
+      if (twitterImageFavicon) {
+        faviconUrl = makeUrlAbsolute(twitterImageFavicon, window.location.href);
       }
     }
     
-    if (!meta.favicon) {
-      meta.favicon = window.location.origin + '/favicon.ico';
+    // Priority 3: Try standard favicon link tags
+    if (!faviconUrl) {
+      const iconSelectors = [
+        'link[rel="icon"]',
+        'link[rel="shortcut icon"]',
+        'link[rel="apple-touch-icon"]',
+        'link[rel="apple-touch-icon-precomposed"]',
+        'link[rel="mask-icon"]'
+      ];
+      
+      for (let selector of iconSelectors) {
+        const link = document.querySelector(selector);
+        if (link?.href) {
+          faviconUrl = makeUrlAbsolute(link.href, window.location.href);
+          break;
+        }
+      }
     }
+    
+    // Priority 4: Try Microsoft favicon
+    if (!faviconUrl) {
+      const msIcon = document.querySelector('meta[name="msapplication-TileImage"]')?.content;
+      if (msIcon) {
+        faviconUrl = makeUrlAbsolute(msIcon, window.location.href);
+      }
+    }
+    
+    // Priority 5: Default favicon location
+    if (!faviconUrl) {
+      faviconUrl = window.location.origin + '/favicon.ico';
+    }
+    
+    meta.favicon = faviconUrl;
     
     // Make URLs absolute
     meta.image = makeUrlAbsolute(meta.image, window.location.href);
-    meta.favicon = makeUrlAbsolute(meta.favicon, window.location.href);
     
     // Clean up whitespace
     meta.title = meta.title.trim();
