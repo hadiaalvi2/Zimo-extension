@@ -349,16 +349,17 @@
       10%, 90% { opacity: 1; }
     }
 
-    /* History View Styles */
+    /* History View Styles - Pixel Perfect */
     #historyView {
-      max-height: 400px;
+      max-height: 450px;
       overflow-y: auto;
+      padding-right: 4px;
       scrollbar-width: thin;
-      scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+      scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
     }
 
     #historyView::-webkit-scrollbar {
-      width: 6px;
+      width: 5px;
     }
 
     #historyView::-webkit-scrollbar-track {
@@ -366,35 +367,37 @@
     }
 
     #historyView::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.15);
       border-radius: 3px;
     }
 
     #historyView::-webkit-scrollbar-thumb:hover {
-      background: rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.25);
     }
 
     .history-header {
       display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 20px;
+      align-items: flex-start;
+      gap: 0;
+      margin-bottom: 24px;
+      margin-left: -4px;
     }
 
     .history-header img {
-      width: 70px;
-      height: 70px;
-      opacity: 0.7;
+      width: 56px;
+      height: 56px;
+      opacity: 0.8;
+      object-fit: contain;
     }
 
     #historyList {
       position: relative;
-      padding-left: 28px;
+      padding-left: 20px;
     }
 
     .history-item-wrapper {
       position: relative;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
     }
 
     .history-item-wrapper:last-child {
@@ -407,10 +410,10 @@
 
     .history-line {
       position: absolute;
-      left: -28px;
-      top: 0;
-      bottom: -20px;
-      width: 4px;
+      left: -20px;
+      top: 8px;
+      bottom: -16px;
+      width: 3px;
       background: linear-gradient(180deg, 
         #4285f4 0%, 
         #ea4335 25%, 
@@ -424,55 +427,63 @@
     #historyList .card {
       transition: all 0.2s;
       margin-bottom: 0;
-      background: rgba(255, 255, 255, 0.02);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      padding: 12px;
+      background: rgba(255, 255, 255, 0.015);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 14px;
+      border-radius: 10px;
     }
 
     #historyList .card:hover {
-      background: rgba(255, 255, 255, 0.04);
-      border-color: rgba(255, 255, 255, 0.12);
-      transform: translateX(2px);
+      background: rgba(255, 255, 255, 0.03);
+      border-color: rgba(255, 255, 255, 0.1);
+      transform: translateX(3px);
     }
 
     #historyList .source-header {
-      margin-bottom: 8px;
+      margin-bottom: 10px;
+      gap: 10px;
     }
 
     #historyList .source-logo {
-      width: 40px;
-      height: 40px;
+      width: 42px;
+      height: 42px;
       font-size: 12px;
+      border-radius: 5px;
     }
 
     #historyList .short-url {
       font-size: 14px;
-      margin-bottom: 2px;
+      margin-bottom: 3px;
+      font-weight: 600;
     }
 
     #historyList .page-title {
-      font-size: 12px;
-      margin-bottom: 6px;
-      -webkit-line-clamp: 1;
+      font-size: 12.5px;
+      margin-bottom: 7px;
+      -webkit-line-clamp: 2;
+      line-height: 1.35;
+      color: rgba(255, 255, 255, 0.85);
     }
 
     #historyList .original-url {
-      font-size: 10px;
-      margin-bottom: 6px;
+      font-size: 10.5px;
+      margin-bottom: 7px;
+      color: rgba(255, 255, 255, 0.45);
     }
 
     #historyList .timestamp {
-      font-size: 10px;
-      gap: 12px;
-      margin-bottom: 8px;
+      font-size: 10.5px;
+      gap: 16px;
+      margin-bottom: 10px;
+      color: rgba(255, 255, 255, 0.45);
     }
 
     .history-actions {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding-top: 8px;
-      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      gap: 14px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.04);
     }
 
     .history-action-btn {
@@ -480,24 +491,25 @@
       border: none;
       cursor: pointer;
       padding: 0;
-      width: 18px;
-      height: 18px;
+      width: 19px;
+      height: 19px;
       display: flex;
       align-items: center;
       justify-content: center;
       transition: all 0.2s;
+      opacity: 0.7;
     }
 
     .history-action-btn img {
       width: 100%;
       height: 100%;
       object-fit: contain;
-      opacity: 0.6;
-      transition: opacity 0.2s;
+      transition: all 0.2s;
     }
 
-    .history-action-btn:hover img {
+    .history-action-btn:hover {
       opacity: 1;
+      transform: scale(1.1);
     }
 
     .history-clicks {
@@ -508,29 +520,31 @@
     }
 
     .history-clicks img {
-      width: 14px;
-      height: 14px;
+      width: 15px;
+      height: 15px;
       opacity: 0.5;
     }
 
     .history-clicks span {
-      font-size: 11px;
+      font-size: 11.5px;
       color: rgba(255, 255, 255, 0.5);
+      font-weight: 500;
     }
 
     #emptyHistory {
       text-align: center;
-      padding: 40px 20px;
-      color: rgba(255, 255, 255, 0.5);
+      padding: 50px 20px;
+      color: rgba(255, 255, 255, 0.45);
     }
 
     #emptyHistory p {
-      margin-bottom: 8px;
+      margin-bottom: 6px;
+      font-size: 13px;
     }
 
     #emptyHistory p:last-child {
-      font-size: 12px;
-      opacity: 0.7;
+      font-size: 11.5px;
+      opacity: 0.8;
     }
   </style>
 </head>
