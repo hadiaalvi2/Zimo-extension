@@ -349,7 +349,7 @@
       10%, 90% { opacity: 1; }
     }
 
-    /* History View Styles - Pixel Perfect */
+
     #historyView {
       max-height: 450px;
       overflow-y: auto;
@@ -377,27 +377,27 @@
 
     .history-header {
       display: flex;
-      align-items: flex-start;
-      gap: 0;
-      margin-bottom: 24px;
-      margin-left: -4px;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      margin-top: -4px;
     }
 
     .history-header img {
-      width: 56px;
-      height: 56px;
-      opacity: 0.8;
+      width: 52px;
+      height: 52px;
+      opacity: 0.85;
       object-fit: contain;
     }
 
     #historyList {
       position: relative;
-      padding-left: 20px;
+      padding-left: 16px;
     }
 
     .history-item-wrapper {
       position: relative;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }
 
     .history-item-wrapper:last-child {
@@ -410,10 +410,10 @@
 
     .history-line {
       position: absolute;
-      left: -20px;
-      top: 8px;
-      bottom: -16px;
-      width: 3px;
+      left: -16px;
+      top: 6px;
+      bottom: -14px;
+      width: 2.5px;
       background: linear-gradient(180deg, 
         #4285f4 0%, 
         #ea4335 25%, 
@@ -427,63 +427,63 @@
     #historyList .card {
       transition: all 0.2s;
       margin-bottom: 0;
-      background: rgba(255, 255, 255, 0.015);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      padding: 14px;
-      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 12px;
+      border-radius: 8px;
     }
 
     #historyList .card:hover {
-      background: rgba(255, 255, 255, 0.03);
-      border-color: rgba(255, 255, 255, 0.1);
-      transform: translateX(3px);
+      background: rgba(255, 255, 255, 0.035);
+      border-color: rgba(255, 255, 255, 0.12);
+      transform: translateX(2px);
     }
 
     #historyList .source-header {
-      margin-bottom: 10px;
+      margin-bottom: 8px;
       gap: 10px;
     }
 
     #historyList .source-logo {
-      width: 42px;
-      height: 42px;
-      font-size: 12px;
-      border-radius: 5px;
+      width: 40px;
+      height: 40px;
+      font-size: 11px;
+      border-radius: 4px;
     }
 
     #historyList .short-url {
-      font-size: 14px;
-      margin-bottom: 3px;
+      font-size: 13.5px;
+      margin-bottom: 2px;
       font-weight: 600;
     }
 
     #historyList .page-title {
-      font-size: 12.5px;
-      margin-bottom: 7px;
+      font-size: 12px;
+      margin-bottom: 6px;
       -webkit-line-clamp: 2;
-      line-height: 1.35;
-      color: rgba(255, 255, 255, 0.85);
+      line-height: 1.3;
+      color: rgba(255, 255, 255, 0.82);
     }
 
     #historyList .original-url {
-      font-size: 10.5px;
-      margin-bottom: 7px;
-      color: rgba(255, 255, 255, 0.45);
+      font-size: 10px;
+      margin-bottom: 6px;
+      color: rgba(255, 255, 255, 0.42);
     }
 
     #historyList .timestamp {
-      font-size: 10.5px;
-      gap: 16px;
-      margin-bottom: 10px;
-      color: rgba(255, 255, 255, 0.45);
+      font-size: 10px;
+      gap: 14px;
+      margin-bottom: 8px;
+      color: rgba(255, 255, 255, 0.42);
     }
 
     .history-actions {
       display: flex;
       align-items: center;
-      gap: 14px;
-      padding-top: 10px;
-      border-top: 1px solid rgba(255, 255, 255, 0.04);
+      gap: 12px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
     }
 
     .history-action-btn {
@@ -491,13 +491,13 @@
       border: none;
       cursor: pointer;
       padding: 0;
-      width: 19px;
-      height: 19px;
+      width: 18px;
+      height: 18px;
       display: flex;
       align-items: center;
       justify-content: center;
       transition: all 0.2s;
-      opacity: 0.7;
+      opacity: 0.65;
     }
 
     .history-action-btn img {
@@ -509,25 +509,25 @@
 
     .history-action-btn:hover {
       opacity: 1;
-      transform: scale(1.1);
+      transform: scale(1.15);
     }
 
     .history-clicks {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       margin-left: auto;
     }
 
     .history-clicks img {
-      width: 15px;
-      height: 15px;
-      opacity: 0.5;
+      width: 14px;
+      height: 14px;
+      opacity: 0.45;
     }
 
     .history-clicks span {
-      font-size: 11.5px;
-      color: rgba(255, 255, 255, 0.5);
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.45);
       font-weight: 500;
     }
 

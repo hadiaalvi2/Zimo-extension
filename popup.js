@@ -27,12 +27,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Setup all event listeners
 function setupEventListeners() {
   try {
-    // Short URL click to copy
+    // Short URL click to OPEN (not copy)
     const shortUrlEl = document.getElementById('shortUrl');
     if (shortUrlEl) {
       shortUrlEl.addEventListener('click', () => {
-        copyToClipboard(currentUrlData?.shortUrl);
+        if (currentUrlData?.shortUrl) {
+          chrome.tabs.create({ url: currentUrlData.shortUrl });
+        }
       });
+      // Update title to reflect it opens link
+      shortUrlEl.title = 'Click to open shortened link';
     }
 
     // Share buttons
@@ -118,8 +122,8 @@ async function shortenCurrentTabUrl() {
         shortUrl = await shortenUrlWithTimeout(tab.url, 10000);
         console.log('URL shortened successfully:', shortUrl);
       } catch (error) {
-        console.error('Shortening failed, using fallback:', error);
-        shortUrl = `https://zimo.ws/${generateShortCode()}`;
+        console.error('Shortening failed, using original URL:', error);
+        shortUrl = tab.url; // Use original URL if shortening fails
       }
       
       // Create final data object
@@ -287,56 +291,27 @@ function extractMetadataFromPage() {
     // Favicon - Dynamic extraction with multiple sources
     let faviconUrl = '';
     
-    // Priority 1: Try OG Image as favicon (many sites use this)
-    const ogImageFavicon = document.querySelector('meta[property="og:image"]')?.content;
-    if (ogImageFavicon) {
-      faviconUrl = makeUrlAbsolute(ogImageFavicon, window.location.href);
-    }
+    const iconSelectors = [
+      'link[rel="icon"]',
+      'link[rel="shortcut icon"]',
+      'link[rel="apple-touch-icon"]',
+      'link[rel="apple-touch-icon-precomposed"]',
+      'link[rel="mask-icon"]'
+    ];
     
-    // Priority 2: Try Twitter image as favicon
-    if (!faviconUrl) {
-      const twitterImageFavicon = document.querySelector('meta[name="twitter:image"]')?.content;
-      if (twitterImageFavicon) {
-        faviconUrl = makeUrlAbsolute(twitterImageFavicon, window.location.href);
+    for (let selector of iconSelectors) {
+      const link = document.querySelector(selector);
+      if (link?.href) {
+        faviconUrl = link.href;
+        break;
       }
     }
     
-    // Priority 3: Try standard favicon link tags
-    if (!faviconUrl) {
-      const iconSelectors = [
-        'link[rel="icon"]',
-        'link[rel="shortcut icon"]',
-        'link[rel="apple-touch-icon"]',
-        'link[rel="apple-touch-icon-precomposed"]',
-        'link[rel="mask-icon"]'
-      ];
-      
-      for (let selector of iconSelectors) {
-        const link = document.querySelector(selector);
-        if (link?.href) {
-          faviconUrl = makeUrlAbsolute(link.href, window.location.href);
-          break;
-        }
-      }
-    }
-    
-    // Priority 4: Try Microsoft favicon
-    if (!faviconUrl) {
-      const msIcon = document.querySelector('meta[name="msapplication-TileImage"]')?.content;
-      if (msIcon) {
-        faviconUrl = makeUrlAbsolute(msIcon, window.location.href);
-      }
-    }
-    
-    // Priority 5: Default favicon location
     if (!faviconUrl) {
       faviconUrl = window.location.origin + '/favicon.ico';
     }
     
     meta.favicon = faviconUrl;
-    
-    // Make URLs absolute
-    meta.image = makeUrlAbsolute(meta.image, window.location.href);
     
     // Clean up whitespace
     meta.title = meta.title.trim();
@@ -347,20 +322,6 @@ function extractMetadataFromPage() {
   }
 
   return meta;
-}
-
-// Make URL absolute helper
-function makeUrlAbsolute(url, baseUrl) {
-  if (!url) return '';
-  
-  try {
-    if (url.startsWith('http://') || url.startsWith('https://')) return url;
-    if (url.startsWith('//')) return new URL(baseUrl).protocol + url;
-    if (url.startsWith('/')) return new URL(baseUrl).origin + url;
-    return new URL(baseUrl).origin + '/' + url;
-  } catch (e) {
-    return url;
-  }
 }
 
 // Extract favicon URL from domain
@@ -413,17 +374,8 @@ async function shortenUrl(url) {
     console.log('Background failed:', error.message);
   }
 
-  return `https://zimo.ws/${generateShortCode()}`;
-}
-
-// Generate short code
-function generateShortCode(length = 6) {
-  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let code = '';
-  for (let i = 0; i < length; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
+  // Return original URL if shortening fails
+  return url;
 }
 
 // Display URL data
@@ -448,7 +400,7 @@ function displayUrlData(data) {
   const shortUrlEl = document.getElementById('shortUrl');
   if (shortUrlEl) {
     shortUrlEl.textContent = data.shortUrl;
-    shortUrlEl.title = 'Click to copy: ' + data.shortUrl;
+    shortUrlEl.title = 'Click to open: ' + data.shortUrl;
   }
   
   const titleEl = document.getElementById('pageTitle');
@@ -590,9 +542,11 @@ function displayHistory() {
     historyList.appendChild(wrapper);
   });
   
+  // Make short URL clickable - OPENS link instead of copying
   document.querySelectorAll('.history-item-wrapper .short-url').forEach(el => {
     el.addEventListener('click', (e) => {
-      copyToClipboard(e.target.getAttribute('data-url'));
+      const url = e.target.getAttribute('data-url');
+      chrome.tabs.create({ url: url });
     });
   });
   

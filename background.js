@@ -58,8 +58,7 @@ async function shortenUrlInBackground(url) {
     tryTinyURL(url),
     tryIsGd(url),
     tryVGd(url),
-    tryCleanURI(url),
-    tryUlvis(url)
+    tryCleanURI(url)
   ];
   
   try {
@@ -77,9 +76,9 @@ async function shortenUrlInBackground(url) {
     console.log('All services race failed:', error);
   }
   
-  // If all fail, warn user and return original URL
-  console.warn('⚠️ All URL shortening services failed. Using original URL.');
-  return url; // Return original URL instead of fake one
+  // If all fail, return original URL
+  console.warn('All URL shortening services failed. Using original URL.');
+  return url;
 }
 
 // TinyURL service
@@ -166,6 +165,39 @@ async function tryVGd(url) {
   } catch (error) {
     clearTimeout(timeoutId);
     console.log('  ✗ v.gd error:', error.message);
+    throw error;
+  }
+}
+
+// CleanURI service
+async function tryCleanURI(url) {
+  console.log('→ Trying CleanURI...');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  
+  try {
+    const response = await fetch(`https://cleanuri.com/api/v1/shorten`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: `url=${encodeURIComponent(url)}`
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.result_url && data.result_url.startsWith('http')) {
+        console.log('  ✓ CleanURI success:', data.result_url);
+        return data.result_url;
+      }
+    }
+    throw new Error('CleanURI failed');
+  } catch (error) {
+    clearTimeout(timeoutId);
+    console.log('  ✗ CleanURI error:', error.message);
     throw error;
   }
 }
@@ -371,16 +403,6 @@ function makeUrlAbsolute(url, baseUrl) {
     console.error('Error making URL absolute:', error);
     return url;
   }
-}
-
-// Generate short code for fallback
-function generateShortCode(length = 6) {
-  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let code = '';
-  for (let i = 0; i < length; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
 }
 
 // Context menu click handler
