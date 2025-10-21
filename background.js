@@ -57,8 +57,8 @@ async function shortenUrlInBackground(url) {
   const services = [
     tryTinyURL(url),
     tryIsGd(url),
-    tryVGd(url),
-    tryCleanURI(url)
+    tryCleanURI(url),
+    tryShrtco(url)
   ];
   
   try {
@@ -140,35 +140,6 @@ async function tryIsGd(url) {
   }
 }
 
-// v.gd service
-async function tryVGd(url) {
-  console.log('→ Trying v.gd...');
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000);
-  
-  try {
-    const response = await fetch(`https://v.gd/create.php?format=simple&url=${encodeURIComponent(url)}`, {
-      method: 'GET',
-      signal: controller.signal
-    });
-    
-    clearTimeout(timeoutId);
-    
-    if (response.ok) {
-      const shortUrl = await response.text();
-      if (shortUrl && shortUrl.startsWith('http') && !shortUrl.includes('Error')) {
-        console.log('  ✓ v.gd success:', shortUrl);
-        return shortUrl;
-      }
-    }
-    throw new Error('v.gd failed');
-  } catch (error) {
-    clearTimeout(timeoutId);
-    console.log('  ✗ v.gd error:', error.message);
-    throw error;
-  }
-}
-
 // CleanURI service
 async function tryCleanURI(url) {
   console.log('→ Trying CleanURI...');
@@ -198,6 +169,35 @@ async function tryCleanURI(url) {
   } catch (error) {
     clearTimeout(timeoutId);
     console.log('  ✗ CleanURI error:', error.message);
+    throw error;
+  }
+}
+
+// Shrtco.de service (new, reliable alternative)
+async function tryShrtco(url) {
+  console.log('→ Trying shrtco.de...');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  
+  try {
+    const response = await fetch(`https://api.shrtco.de/v2/shorten?url=${encodeURIComponent(url)}`, {
+      method: 'GET',
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.ok && data.result && data.result.full_short_link) {
+        console.log('  ✓ shrtco.de success:', data.result.full_short_link);
+        return data.result.full_short_link;
+      }
+    }
+    throw new Error('shrtco.de failed');
+  } catch (error) {
+    clearTimeout(timeoutId);
+    console.log('  ✗ shrtco.de error:', error.message);
     throw error;
   }
 }

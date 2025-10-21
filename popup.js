@@ -35,7 +35,6 @@ function setupEventListeners() {
           chrome.tabs.create({ url: currentUrlData.shortUrl });
         }
       });
-      // Update title to reflect it opens link
       shortUrlEl.title = 'Click to open shortened link';
     }
 
@@ -109,48 +108,47 @@ async function shortenCurrentTabUrl() {
       return;
     }
 
-    try {
-      // Get metadata using multiple methods
-      console.log('Step 1: Fetching metadata...');
-      let metadata = await extractMetadataOptimized(tab);
-      console.log('Metadata fetched:', metadata);
+    // Shorten URL FIRST (parallel with metadata)
+    console.log('Starting parallel operations...');
+    
+    const [shortUrl, metadata] = await Promise.all([
+      shortenUrlWithTimeout(tab.url, 8000).catch(err => {
+        console.error('Shortening failed:', err);
+        return tab.url; // Fallback to original
+      }),
+      extractMetadataOptimized(tab).catch(err => {
+        console.error('Metadata failed:', err);
+        return {
+          title: tab.title || extractTitleFromUrl(tab.url),
+          description: '',
+          image: '',
+          favicon: tab.favIconUrl || getFaviconFromUrl(tab.url)
+        };
+      })
+    ]);
+    
+    console.log('Parallel operations complete:', { shortUrl, metadata });
+    
+    // Create final data object
+    currentUrlData = {
+      originalUrl: tab.url,
+      shortUrl: shortUrl,
+      title: metadata.title || tab.title || extractTitleFromUrl(tab.url),
+      favicon: metadata.favicon || tab.favIconUrl || getFaviconFromUrl(tab.url),
+      description: metadata.description || '',
+      image: metadata.image || '',
+      timestamp: Date.now(),
+      clicks: 0
+    };
 
-      // Shorten URL
-      console.log('Step 2: Shortening URL...');
-      let shortUrl;
-      try {
-        shortUrl = await shortenUrlWithTimeout(tab.url, 10000);
-        console.log('URL shortened successfully:', shortUrl);
-      } catch (error) {
-        console.error('Shortening failed, using original URL:', error);
-        shortUrl = tab.url; // Use original URL if shortening fails
-      }
-      
-      // Create final data object
-      currentUrlData = {
-        originalUrl: tab.url,
-        shortUrl: shortUrl,
-        title: metadata.title || tab.title || extractTitleFromUrl(tab.url),
-        favicon: metadata.favicon || tab.favIconUrl || getFaviconFromUrl(tab.url),
-        description: metadata.description || '',
-        image: metadata.image || '',
-        timestamp: Date.now(),
-        clicks: 0
-      };
+    console.log('Final URL data:', currentUrlData);
 
-      console.log('Final URL data:', currentUrlData);
-
-      // Display and save
-      displayUrlData(currentUrlData);
-      await saveToHistory(currentUrlData);
-      
-      showLoading(false);
-      console.log('=== SHORTENING COMPLETE ===');
-    } catch (error) {
-      console.error('ERROR in metadata/shortening:', error);
-      showLoading(false);
-      showError(error.message || 'Failed to process URL');
-    }
+    // Display and save
+    displayUrlData(currentUrlData);
+    await saveToHistory(currentUrlData);
+    
+    showLoading(false);
+    console.log('=== SHORTENING COMPLETE ===');
   } catch (error) {
     console.error('ERROR in shortenCurrentTabUrl:', error);
     showLoading(false);
@@ -207,7 +205,7 @@ async function extractMetadataOptimized(tab) {
         }
       }),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout')), 8000)
+        setTimeout(() => reject(new Error('Timeout')), 6000)
       )
     ]);
 
@@ -347,7 +345,7 @@ function extractTitleFromUrl(url) {
 }
 
 // Shorten URL with timeout
-async function shortenUrlWithTimeout(url, timeout = 10000) {
+async function shortenUrlWithTimeout(url, timeout = 8000) {
   return Promise.race([
     shortenUrl(url),
     new Promise((_, reject) => 
@@ -719,15 +717,94 @@ function showQRModal(url) {
     </div>
   `;
   
+  // Add QR modal styles
+  const style = document.createElement('style');
+  style.textContent = `
+    .qr-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+    }
+    .qr-modal-content {
+      background: rgba(40, 40, 40, 0.95);
+      border-radius: 12px;
+      padding: 20px;
+      max-width: 300px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .qr-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .qr-modal-header h3 {
+      margin: 0;
+      color: white;
+      font-size: 16px;
+    }
+    .qr-close-btn {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 24px;
+      cursor: pointer;
+      line-height: 1;
+      padding: 0;
+      width: 24px;
+      height: 24px;
+    }
+    .qr-modal-body {
+      text-align: center;
+    }
+    .qr-code-img {
+      width: 200px;
+      height: 200px;
+      margin-bottom: 12px;
+      background: white;
+      padding: 10px;
+      border-radius: 8px;
+    }
+    .qr-url {
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 11px;
+      word-break: break-all;
+      margin-bottom: 16px;
+    }
+    .qr-download-btn {
+      background: #5db0ff;
+      border: none;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .qr-download-btn:hover {
+      background: #7dc3ff;
+    }
+  `;
+  document.head.appendChild(style);
+  
   document.body.appendChild(modal);
   
   modal.querySelector('.qr-close-btn').addEventListener('click', () => {
     modal.remove();
+    style.remove();
   });
   
   modal.addEventListener('click', (e) => {
     if (e.target === modal) {
       modal.remove();
+      style.remove();
     }
   });
 
