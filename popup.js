@@ -518,19 +518,19 @@ function displayHistory() {
       </div>
       <div class="history-actions">
         <button class="history-action-btn" data-action="copy" data-index="${index}">
-          <img src="assets/Share/Copy Icon W.svg" alt="Copy">
+          <img src="assets/Open in New Window W.svg" alt="Open">
         </button>
         <button class="history-action-btn" data-action="open" data-index="${index}">
-          <img src="assets/Share/OMN W.svg" alt="Open">
+          <img src="assets/Share/Copy Icon W.svg" alt="Copy">
         </button>
         <button class="history-action-btn" data-action="qr" data-index="${index}">
-          <img src="assets/Share/QR Code W.svg" alt="QR Code">
+          <img src="assets/Share W.svg" alt="Share">
         </button>
         <button class="history-action-btn" data-action="delete" data-index="${index}">
-          <img src="assets/Share/X W.svg" alt="Delete">
+          <img src="assets/Delete Icon W.svg" alt="Delete">
         </button>
         <div class="history-clicks">
-          <img src="assets/Extension+/Chrome Extension Icon.svg" alt="Clicks">
+          <img src="assets/Counter - URL Clicks W.svg" alt="Clicks">
           <span>${item.clicks || 0}</span>
         </div>
       </div>
