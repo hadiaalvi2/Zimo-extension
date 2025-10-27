@@ -18,7 +18,7 @@
     body {
       width: 400px;
       font-family: Arial, Helvetica, sans-serif;
-      background: #2a2a2a;
+      background: #3a3a3a;
       color: #fff;
       min-height: 300px;
       display: flex;
@@ -30,8 +30,8 @@
       align-items: center;
       justify-content: space-between;
       padding: 16px;
-      background: transparent;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      background: #4a4a4a;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     }
 
     .logo {
@@ -88,14 +88,15 @@
       flex: 1;
       display: flex;
       flex-direction: column;
+      background: #3a3a3a;
     }
 
     .card {
       background: transparent;
-      border-radius: 12px;
+      border-radius: 0;
       padding: 16px;
       margin-bottom: 16px;
-      border: 1px solid rgba(255, 255, 255, 0.05);
+      border: none;
       box-shadow: none;
     }
 
@@ -190,7 +191,7 @@
     }
 
     .error-state {
-      background: rgba(255, 59, 48, 0.1);
+      background: rgba(255, 59, 48, 0.15);
       border: 1px solid rgba(255, 59, 48, 0.3);
       border-radius: 8px;
       padding: 12px;
@@ -207,13 +208,13 @@
       justify-content: space-between;
       gap: 0;
       overflow: hidden;
-      background: rgba(0, 0, 0, 0.2);
+      background: #4a4a4a;
       border-radius: 8px;
       margin: 0 -4px;
     }
 
     .nav-btn {
-      background: rgba(72, 71, 71, 0.05);
+      background: rgba(255, 255, 255, 0.05);
       border: none;
       cursor: pointer;
       padding: 0;
@@ -229,7 +230,7 @@
     }
 
     .nav-btn:hover {
-      background: rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.15);
     }
 
     .nav-btn:disabled {
@@ -313,9 +314,10 @@
       gap: 10px;
       font-size: 9px;
       color: rgba(255, 255, 255, 0.6);
-      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
       margin-top: auto;
       letter-spacing: 0.3px;
+      background: #4a4a4a;
     }
 
     .footer-left {
@@ -394,7 +396,7 @@
       overflow-x: hidden;
       padding: 0 8px 0 0;
       scrollbar-width: thin;
-      scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+      scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
     }
 
     .history-scroll-container::-webkit-scrollbar {
@@ -406,12 +408,12 @@
     }
 
     .history-scroll-container::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.2);
       border-radius: 2px;
     }
 
     .history-scroll-container::-webkit-scrollbar-thumb:hover {
-      background: rgba(255, 255, 255, 0.25);
+      background: rgba(255, 255, 255, 0.3);
     }
 
     .history-header {
@@ -470,15 +472,15 @@
     #historyList .card {
       transition: all 0.2s;
       margin-bottom: 0;
-      background: transparent;
+      background: #4a4a4a;
       border: none;
       padding: 16px 0;
       border-radius: 0;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     }
 
     #historyList .card:hover {
-      background: transparent;
+      background: #525252;
     }
     
     .history-item-wrapper:last-child #historyList .card,
@@ -535,7 +537,7 @@
       align-items: center;
       gap: 24px;
       padding-top: 12px;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
     }
 
     .history-action-btn {
@@ -728,4 +730,4 @@
 
   <script src="popup.js"></script>
 </body>
-</html>
+</html> 
