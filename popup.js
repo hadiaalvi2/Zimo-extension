@@ -47,21 +47,56 @@ function setupEventListeners() {
     });
 
     // Scroll navigation
-    const shareActions = document.getElementById('shareActions');
-    const scrollLeftBtn = document.getElementById('scrollLeft');
-    const scrollRightBtn = document.getElementById('scrollRight');
-    
-    if (scrollLeftBtn && scrollRightBtn && shareActions) {
-      scrollLeftBtn.addEventListener('click', () => {
-        shareActions.scrollBy({ left: -150, behavior: 'smooth' });
-      });
-      scrollRightBtn.addEventListener('click', () => {
-        shareActions.scrollBy({ left: 150, behavior: 'smooth' });
-      });
-      
-      shareActions.addEventListener('scroll', updateScrollButtons);
-      updateScrollButtons();
-    }
+    // Scroll navigation
+const shareActions = document.getElementById('shareActions');
+const scrollLeftBtn = document.getElementById('scrollLeft');
+const scrollRightBtn = document.getElementById('scrollRight');
+
+if (scrollLeftBtn && scrollRightBtn && shareActions) {
+  // Get original buttons
+  const originalButtons = Array.from(shareActions.querySelectorAll('.share-btn'));
+  
+  // Add 50 buttons at the END (for scrolling right)
+  for (let i = 0; i < 50; i++) {
+    const btn = originalButtons[i % originalButtons.length];
+    const clone = btn.cloneNode(true);
+    clone.addEventListener('click', (e) => {
+      const action = clone.getAttribute('data-action');
+      handleShareAction(action);
+    });
+    shareActions.appendChild(clone);
+  }
+  
+  // Add 50 buttons at the BEGINNING (for scrolling left) - IN REVERSE to maintain order
+  for (let i = 49; i >= 0; i--) {
+    const btn = originalButtons[i % originalButtons.length];
+    const clone = btn.cloneNode(true);
+    clone.addEventListener('click', (e) => {
+      const action = clone.getAttribute('data-action');
+      handleShareAction(action);
+    });
+    shareActions.insertBefore(clone, shareActions.firstChild);
+  }
+  
+  // Start in the MIDDLE
+  setTimeout(() => {
+    const middlePosition = shareActions.scrollWidth / 2 - shareActions.clientWidth / 2;
+    shareActions.scrollLeft = middlePosition;
+  }, 100);
+  
+  // Simple scroll
+  scrollLeftBtn.addEventListener('click', () => {
+    shareActions.scrollBy({ left: -150, behavior: 'smooth' });
+  });
+  
+  scrollRightBtn.addEventListener('click', () => {
+    shareActions.scrollBy({ left: 150, behavior: 'smooth' });
+  });
+  
+  // Never disable buttons
+  scrollLeftBtn.disabled = false;
+  scrollRightBtn.disabled = false;
+}
 
     // History icon toggle
     const historyIcon = document.getElementById('historyIcon');
@@ -581,6 +616,8 @@ async function handleHistoryAction(action, index) {
 
 // Toggle view
 function toggleView() {
+  const recentLabel = document.getElementById('recentLabel');
+  
   if (currentView === 'main') {
     currentView = 'history';
     const mainCard = document.getElementById('mainCard');
@@ -590,6 +627,7 @@ function toggleView() {
     if (mainCard) mainCard.style.display = 'none';
     if (historyView) historyView.style.display = 'block';
     if (shareContainer) shareContainer.style.display = 'none';
+    if (recentLabel) recentLabel.classList.add('show');
     displayHistory();
   } else {
     currentView = 'main';
@@ -600,6 +638,7 @@ function toggleView() {
     if (mainCard) mainCard.style.display = 'block';
     if (historyView) historyView.style.display = 'none';
     if (shareContainer) shareContainer.style.display = 'flex';
+    if (recentLabel) recentLabel.classList.remove('show');
   }
 }
 
@@ -654,17 +693,17 @@ function showCopyFeedback() {
 }
 
 // Update scroll buttons
-function updateScrollButtons() {
-  const shareActions = document.getElementById('shareActions');
-  const scrollLeft = document.getElementById('scrollLeft');
-  const scrollRight = document.getElementById('scrollRight');
+// function updateScrollButtons() {
+//   const shareActions = document.getElementById('shareActions');
+//   const scrollLeft = document.getElementById('scrollLeft');
+//   const scrollRight = document.getElementById('scrollRight');
   
-  if (!shareActions || !scrollLeft || !scrollRight) return;
+//   if (!shareActions || !scrollLeft || !scrollRight) return;
   
-  scrollLeft.disabled = shareActions.scrollLeft <= 0;
-  scrollRight.disabled = 
-    shareActions.scrollLeft >= shareActions.scrollWidth - shareActions.clientWidth - 1;
-}
+//   scrollLeft.disabled = shareActions.scrollLeft <= 0;
+//   scrollRight.disabled = 
+//     shareActions.scrollLeft >= shareActions.scrollWidth - shareActions.clientWidth - 1;
+// }
 
 // Show loading
 function showLoading(show) {
