@@ -211,6 +211,69 @@
       color: rgba(255, 255, 255, 0.5);
       display: flex;
       gap: 20px;
+      margin-bottom: 12px;
+    }
+
+    .main-card-actions {
+      display: flex;
+      align-items: center;
+      gap: 34px;
+      padding-top: 12px;
+    }
+
+    .main-action-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.25s ease;
+      opacity: 0.6;
+      flex-shrink: 0;
+    }
+
+    .main-action-btn img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      transition: all 0.25s ease;
+    }
+
+    .main-action-btn:hover {
+      opacity: 1;
+      transform: scale(1.15);
+    }
+
+    .main-action-btn:active {
+      transform: scale(1);
+    }
+
+    .main-clicks {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: 0;
+      flex-shrink: 0;
+    }
+
+    .main-clicks img {
+      width: 18px;
+      height: 18px;
+      opacity: 0.5;
+      object-fit: contain;
+    }
+
+    .main-clicks span {
+      font-size: 13px;
+      color: #ffffff;
+      font-weight: 500;
+      white-space: nowrap;
+      min-width: 20px;
+      text-align: left;
     }
 
     .loading-state {
@@ -674,7 +737,7 @@
       <div class="source-header">
         <div class="source-logo" id="sourceLogo">BBC</div>
         <div class="source-info">
-          <div class="short-url" id="shortUrl" title="Click to copy">zimo.ws/abc123</div>
+          <div class="short-url" id="shortUrl" title="Click to open">zimo.ws/abc123</div>
         </div>
       </div>
 
@@ -683,6 +746,22 @@
       <div class="timestamp">
         <span id="timeDisplay">--:--</span>
         <span id="dateDisplay">-- ------ ----</span>
+      </div>
+      
+      <div class="main-card-actions">
+        <button class="main-action-btn" id="mainOpenBtn" title="Open in new tab">
+          <img src="assets/Open in New Window W.svg" alt="Open">
+        </button>
+        <button class="main-action-btn" id="mainCopyBtn" title="Copy URL">
+          <img src="assets/Share/Copy Icon W.svg" alt="Copy">
+        </button>
+        <button class="main-action-btn" id="mainShareBtn" title="Share">
+          <img src="assets/Share W.svg" alt="Share">
+        </button>
+        <button class="history-action-btn" data-action="delete" data-index="${index}">
+          <img src="assets/Delete Icon W.svg" alt="Delete">
+        </button>
+       
       </div>
     </div>
 
@@ -760,4 +839,4 @@
 
   <script src="popup.js"></script>
 </body>
-</html> 
+</html>
