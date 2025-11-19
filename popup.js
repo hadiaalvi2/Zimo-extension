@@ -1,3 +1,4 @@
+
 let currentUrlData = null;
 let historyData = [];
 let currentView = 'main';
@@ -47,61 +48,104 @@ function setupEventListeners() {
     });
 
     // Scroll navigation
-    // Scroll navigation
-const shareActions = document.getElementById('shareActions');
-const scrollLeftBtn = document.getElementById('scrollLeft');
-const scrollRightBtn = document.getElementById('scrollRight');
+    const shareActions = document.getElementById('shareActions');
+    const scrollLeftBtn = document.getElementById('scrollLeft');
+    const scrollRightBtn = document.getElementById('scrollRight');
 
-if (scrollLeftBtn && scrollRightBtn && shareActions) {
-  // Get original buttons
-  const originalButtons = Array.from(shareActions.querySelectorAll('.share-btn'));
-  
-  // Add 50 buttons at the END (for scrolling right)
-  for (let i = 0; i < 50; i++) {
-    const btn = originalButtons[i % originalButtons.length];
-    const clone = btn.cloneNode(true);
-    clone.addEventListener('click', (e) => {
-      const action = clone.getAttribute('data-action');
-      handleShareAction(action);
-    });
-    shareActions.appendChild(clone);
-  }
-  
-  // Add 50 buttons at the BEGINNING (for scrolling left) - IN REVERSE to maintain order
-  for (let i = 49; i >= 0; i--) {
-    const btn = originalButtons[i % originalButtons.length];
-    const clone = btn.cloneNode(true);
-    clone.addEventListener('click', (e) => {
-      const action = clone.getAttribute('data-action');
-      handleShareAction(action);
-    });
-    shareActions.insertBefore(clone, shareActions.firstChild);
-  }
-  
-  // Start in the MIDDLE
-  setTimeout(() => {
-    const middlePosition = shareActions.scrollWidth / 2 - shareActions.clientWidth / 2;
-    shareActions.scrollLeft = middlePosition;
-  }, 100);
-  
-  // Simple scroll
-  scrollLeftBtn.addEventListener('click', () => {
-    shareActions.scrollBy({ left: -150, behavior: 'smooth' });
-  });
-  
-  scrollRightBtn.addEventListener('click', () => {
-    shareActions.scrollBy({ left: 150, behavior: 'smooth' });
-  });
-  
-  // Never disable buttons
-  scrollLeftBtn.disabled = false;
-  scrollRightBtn.disabled = false;
-}
+    if (scrollLeftBtn && scrollRightBtn && shareActions) {
+      // Get original buttons
+      const originalButtons = Array.from(shareActions.querySelectorAll('.share-btn'));
+      
+      // Add 50 buttons at the END (for scrolling right)
+      for (let i = 0; i < 50; i++) {
+        const btn = originalButtons[i % originalButtons.length];
+        const clone = btn.cloneNode(true);
+        clone.addEventListener('click', (e) => {
+          const action = clone.getAttribute('data-action');
+          handleShareAction(action);
+        });
+        shareActions.appendChild(clone);
+      }
+      
+      // Add 50 buttons at the BEGINNING (for scrolling left) - IN REVERSE to maintain order
+      for (let i = 49; i >= 0; i--) {
+        const btn = originalButtons[i % originalButtons.length];
+        const clone = btn.cloneNode(true);
+        clone.addEventListener('click', (e) => {
+          const action = clone.getAttribute('data-action');
+          handleShareAction(action);
+        });
+        shareActions.insertBefore(clone, shareActions.firstChild);
+      }
+      
+      // Start in the MIDDLE
+      setTimeout(() => {
+        const middlePosition = shareActions.scrollWidth / 2 - shareActions.clientWidth / 2;
+        shareActions.scrollLeft = middlePosition;
+      }, 100);
+      
+      // Simple scroll
+      scrollLeftBtn.addEventListener('click', () => {
+        shareActions.scrollBy({ left: -150, behavior: 'smooth' });
+      });
+      
+      scrollRightBtn.addEventListener('click', () => {
+        shareActions.scrollBy({ left: 150, behavior: 'smooth' });
+      });
+      
+      // Never disable buttons
+      scrollLeftBtn.disabled = false;
+      scrollRightBtn.disabled = false;
+    }
 
     // History icon toggle
     const historyIcon = document.getElementById('historyIcon');
     if (historyIcon) {
       historyIcon.addEventListener('click', toggleView);
+    }
+    
+    // Main card action buttons
+    const mainOpenBtn = document.getElementById('mainOpenBtn');
+    const mainCopyBtn = document.getElementById('mainCopyBtn');
+    const mainShareBtn = document.getElementById('mainShareBtn');
+    const mainDeleteBtn = document.getElementById('mainDeleteBtn');
+    
+    if (mainOpenBtn) {
+      mainOpenBtn.addEventListener('click', () => {
+        if (currentUrlData?.shortUrl) {
+          chrome.tabs.create({ url: currentUrlData.shortUrl });
+        }
+      });
+    }
+    
+    if (mainCopyBtn) {
+      mainCopyBtn.addEventListener('click', () => {
+        if (currentUrlData?.shortUrl) {
+          copyToClipboard(currentUrlData.shortUrl);
+        }
+      });
+    }
+    
+    if (mainShareBtn) {
+      mainShareBtn.addEventListener('click', () => {
+        if (currentUrlData?.shortUrl) {
+          showQRModal(currentUrlData.shortUrl);
+        }
+      });
+    }
+    
+    if (mainDeleteBtn) {
+      mainDeleteBtn.addEventListener('click', async () => {
+        if (currentUrlData) {
+          // Find and remove from history
+          const index = historyData.findIndex(item => item.originalUrl === currentUrlData.originalUrl);
+          if (index !== -1) {
+            historyData.splice(index, 1);
+            await chrome.storage.local.set({ urlHistory: historyData });
+            showCopyFeedback('Deleted from history');
+          }
+        }
+      });
     }
     
     console.log('All event listeners attached');
@@ -143,6 +187,16 @@ async function shortenCurrentTabUrl() {
       return;
     }
 
+    // Check if this URL was already shortened
+    const existingIndex = historyData.findIndex(item => item.originalUrl === tab.url);
+    let shortenCount = 1;
+    
+    if (existingIndex !== -1) {
+      // URL exists, increment the count
+      shortenCount = (historyData[existingIndex].clicks || 0) + 1;
+      console.log(`URL already shortened ${shortenCount} times`);
+    }
+
     // Shorten URL FIRST (parallel with metadata)
     console.log('Starting parallel operations...');
     
@@ -164,7 +218,7 @@ async function shortenCurrentTabUrl() {
     
     console.log('Parallel operations complete:', { shortUrl, metadata });
     
-    // Create final data object
+    // Create final data object with updated click count
     currentUrlData = {
       originalUrl: tab.url,
       shortUrl: shortUrl,
@@ -173,7 +227,7 @@ async function shortenCurrentTabUrl() {
       description: metadata.description || '',
       image: metadata.image || '',
       timestamp: Date.now(),
-      clicks: 0
+      clicks: shortenCount
     };
 
     console.log('Final URL data:', currentUrlData);
@@ -447,6 +501,10 @@ function displayUrlData(data) {
   const dateEl = document.getElementById('dateDisplay');
   if (timeEl) timeEl.textContent = formatTime(date);
   if (dateEl) dateEl.textContent = formatDate(date);
+  
+  // Update clicks count - shows how many times this URL was shortened
+  const clicksCountEl = document.getElementById('mainClicksCount');
+  if (clicksCountEl) clicksCountEl.textContent = data.clicks || 1;
 }
 
 // Format time
@@ -473,9 +531,22 @@ async function saveToHistory(data) {
     const existingIndex = historyData.findIndex(item => item.originalUrl === data.originalUrl);
     
     if (existingIndex !== -1) {
-      historyData[existingIndex] = data;
+      // Update existing entry with new click count and timestamp
+      historyData[existingIndex] = {
+        ...historyData[existingIndex],
+        clicks: data.clicks,
+        timestamp: data.timestamp,
+        shortUrl: data.shortUrl,
+        title: data.title,
+        description: data.description,
+        image: data.image,
+        favicon: data.favicon
+      };
+      console.log(`Updated existing URL. Shortened ${data.clicks} times`);
     } else {
+      // Add new entry
       historyData.unshift(data);
+      console.log('Added new URL to history');
     }
     
     if (historyData.length > 50) {
@@ -552,21 +623,21 @@ function displayHistory() {
         <span>${formatDate(date)}</span>
       </div>
       <div class="history-actions">
-        <button class="history-action-btn" data-action="copy" data-index="${index}">
-          <img src="assets/Open in New Window W.svg" alt="Open">
-        </button>
-        <button class="history-action-btn" data-action="open" data-index="${index}">
+        <button class="history-action-btn" data-action="copy" data-index="${index}" title="Copy URL">
           <img src="assets/Share/Copy Icon W.svg" alt="Copy">
         </button>
-        <button class="history-action-btn" data-action="qr" data-index="${index}">
+        <button class="history-action-btn" data-action="qr" data-index="${index}" title="Show QR Code">
           <img src="assets/Share W.svg" alt="Share">
         </button>
-        <button class="history-action-btn" data-action="delete" data-index="${index}">
+        <button class="history-action-btn" data-action="open" data-index="${index}" title="Open in new tab">
+          <img src="assets/Open in New Window W.svg" alt="Open">
+        </button>
+        <button class="history-action-btn" data-action="delete" data-index="${index}" title="Delete">
           <img src="assets/Delete Icon W.svg" alt="Delete">
         </button>
-        <div class="history-clicks">
+        <div class="history-clicks" title="Times shortened">
           <img src="assets/Counter - URL Clicks W.svg" alt="Clicks">
-          <span>${item.clicks || 0}</span>
+          <span>${item.clicks || 1}</span>
         </div>
       </div>
     `;
@@ -583,6 +654,7 @@ function displayHistory() {
     });
   });
   
+  // Add event listeners to history action buttons
   document.querySelectorAll('.history-action-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const action = e.currentTarget.getAttribute('data-action');
@@ -598,18 +670,23 @@ async function handleHistoryAction(action, index) {
   
   switch (action) {
     case 'copy':
+      // Copy the shortened URL
       copyToClipboard(item.shortUrl);
       break;
     case 'open':
-      chrome.tabs.create({ url: item.shortUrl });
+      // Open https://zimo.ws/ in new tab
+      chrome.tabs.create({ url: 'https://zimo.ws/' });
       break;
     case 'qr':
+      // Show QR code modal (share)
       showQRModal(item.shortUrl);
       break;
     case 'delete':
+      // Delete from history
       historyData.splice(index, 1);
       await chrome.storage.local.set({ urlHistory: historyData });
       displayHistory();
+      showCopyFeedback('Deleted from history');
       break;
   }
 }
@@ -683,27 +760,14 @@ function copyToClipboard(text) {
 }
 
 // Show copy feedback
-function showCopyFeedback() {
+function showCopyFeedback(message = 'Copied!') {
   const feedback = document.createElement('div');
   feedback.className = 'copy-feedback';
-  feedback.textContent = 'Copied!';
+  feedback.textContent = message;
   document.body.appendChild(feedback);
   
   setTimeout(() => feedback.remove(), 2000);
 }
-
-// Update scroll buttons
-// function updateScrollButtons() {
-//   const shareActions = document.getElementById('shareActions');
-//   const scrollLeft = document.getElementById('scrollLeft');
-//   const scrollRight = document.getElementById('scrollRight');
-  
-//   if (!shareActions || !scrollLeft || !scrollRight) return;
-  
-//   scrollLeft.disabled = shareActions.scrollLeft <= 0;
-//   scrollRight.disabled = 
-//     shareActions.scrollLeft >= shareActions.scrollWidth - shareActions.clientWidth - 1;
-// }
 
 // Show loading
 function showLoading(show) {

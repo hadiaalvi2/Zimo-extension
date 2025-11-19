@@ -221,7 +221,7 @@
       padding-top: 12px;
     }
 
-    .main-action-btn {
+ .main-action-btn {
       background: none;
       border: none;
       cursor: pointer;
@@ -232,7 +232,7 @@
       align-items: center;
       justify-content: center;
       transition: all 0.25s ease;
-      opacity: 0.6;
+      opacity: 1;
       flex-shrink: 0;
     }
 
@@ -241,11 +241,16 @@
       height: 100%;
       object-fit: contain;
       transition: all 0.25s ease;
+      filter: none;
     }
 
     .main-action-btn:hover {
       opacity: 1;
       transform: scale(1.15);
+    }
+
+    .main-action-btn:hover img {
+      filter: brightness(1.2);
     }
 
     .main-action-btn:active {
@@ -749,9 +754,14 @@
       </div>
       
       <div class="main-card-actions">
-        <button class="main-action-btn" id="mainOpenBtn" title="Open in new tab">
-          <img src="assets/Open in New Window W.svg" alt="Open">
-        </button>
+       <button class="history-action-btn" 
+        data-action="open" 
+        data-index="${index}" 
+        title="Open in new tab" 
+        onclick="window.open('https://zimo.ws/', '_blank')">
+  <img src="assets/Open in New Window W.svg" alt="Open">
+</button>
+
         <button class="main-action-btn" id="mainCopyBtn" title="Copy URL">
           <img src="assets/Share/Copy Icon W.svg" alt="Copy">
         </button>
