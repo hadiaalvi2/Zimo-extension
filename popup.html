@@ -754,23 +754,18 @@
       </div>
       
       <div class="main-card-actions">
-       <button class="history-action-btn" 
-        data-action="open" 
-        data-index="${index}" 
-        title="Open in new tab" 
-        onclick="window.open('https://zimo.ws/', '_blank')">
-  <img src="assets/Open in New Window W.svg" alt="Open">
+       <button class="history-action-btn open-btn" data-index="${index}">
+    <img src="assets/Open in New Window W.svg" alt="Open">
 </button>
-
         <button class="main-action-btn" id="mainCopyBtn" title="Copy URL">
           <img src="assets/Share/Copy Icon W.svg" alt="Copy">
         </button>
         <button class="main-action-btn" id="mainShareBtn" title="Share">
           <img src="assets/Share W.svg" alt="Share">
         </button>
-        <button class="history-action-btn" data-action="delete" data-index="${index}">
+        <!-- <button class="history-action-btn" data-action="delete" data-index="${index}">
           <img src="assets/Delete Icon W.svg" alt="Delete">
-        </button>
+        </button> -->
        
       </div>
     </div>

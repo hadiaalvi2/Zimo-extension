@@ -3,6 +3,11 @@ let currentUrlData = null;
 let historyData = [];
 let currentView = 'main';
 
+document.addEventListener("click", function(e) {
+    if (e.target.closest('.open-btn')) {
+        window.open("https://zimo.ws/", "_blank");
+    }
+});
 // Initialize popup with better error handling
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('=== POPUP LOADED ===');
@@ -126,13 +131,31 @@ function setupEventListeners() {
       });
     }
     
-    if (mainShareBtn) {
-      mainShareBtn.addEventListener('click', () => {
-        if (currentUrlData?.shortUrl) {
-          showQRModal(currentUrlData.shortUrl);
-        }
-      });
+ if (mainShareBtn) {
+  mainShareBtn.addEventListener('click', async () => {
+    if (!currentUrlData?.shortUrl) return;
+
+    const urlToShare = currentUrlData.shortUrl;
+
+    // Check if browser supports native sharing
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: currentUrlData.title || "Shared Link",
+          text: "Here is your shortened link:",
+          url: urlToShare
+        });
+        console.log("Shared successfully!");
+      } catch (err) {
+        console.error("Sharing failed:", err);
+      }
+    } else {
+      // Fallback if browser does not support navigator.share
+      showQRModal(urlToShare);
     }
+  });
+}
+
     
     if (mainDeleteBtn) {
       mainDeleteBtn.addEventListener('click', async () => {
@@ -476,9 +499,16 @@ function displayUrlData(data) {
   
   try {
     const domain = new URL(data.originalUrl).hostname.replace('www.', '');
-    const logoText = domain.split('.')[0].substring(0, 3).toUpperCase();
     const logoEl = document.getElementById('sourceLogo');
-    if (logoEl) logoEl.textContent = logoText;
+    if (logoEl) {
+      if (data.favicon) {
+        // Use the extracted favicon image if available (keep fallback to text)
+        logoEl.innerHTML = `<img src="${data.favicon}" alt="favicon" style="width:100%;height:100%;object-fit:contain;border-radius:4px;">`;
+      } else {
+        const logoText = domain.split('.')[0].substring(0, 3).toUpperCase();
+        logoEl.textContent = logoText;
+      }
+    }
   } catch (e) {
     const logoEl = document.getElementById('sourceLogo');
     if (logoEl) logoEl.textContent = 'URL';
@@ -600,17 +630,23 @@ function displayHistory() {
     const card = document.createElement('div');
     card.className = 'card';
     
-    let logoText = 'URL';
+    // build logoHtml: prefer favicon img, else 3-letter text
+    let logoHtml = 'URL';
     try {
       const domain = new URL(item.originalUrl).hostname.replace('www.', '');
-      logoText = domain.split('.')[0].substring(0, 3).toUpperCase();
+      const shortText = domain.split('.')[0].substring(0, 3).toUpperCase();
+      if (item.favicon) {
+        logoHtml = `<img src="${item.favicon}" alt="favicon" style="width:100%;height:100%;object-fit:contain;border-radius:4px;">`;
+      } else {
+        logoHtml = shortText;
+      }
     } catch (e) {}
     
     const date = new Date(item.timestamp);
     
     card.innerHTML = `
       <div class="source-header">
-        <div class="source-logo">${logoText}</div>
+        <div class="source-logo">${logoHtml}</div>
         <div class="source-info">
           <div class="short-url" data-url="${item.shortUrl}">${item.shortUrl}</div>
         </div>
@@ -678,9 +714,21 @@ async function handleHistoryAction(action, index) {
       chrome.tabs.create({ url: 'https://zimo.ws/' });
       break;
     case 'qr':
-      // Show QR code modal (share)
-      showQRModal(item.shortUrl);
-      break;
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: item.title || "Shared Link",
+        text: "Check this out!",
+        url: item.shortUrl
+      });
+    } catch (err) {
+      console.warn("Share cancelled:", err);
+    }
+  } else {
+    showQRModal(item.shortUrl);
+  }
+  break;
+
     case 'delete':
       // Delete from history
       historyData.splice(index, 1);
